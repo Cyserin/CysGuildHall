@@ -319,3 +319,251 @@ end
 GH.On("PLAYER_LOGIN", function() PruneSoon(8) end)
 GH.On("SKILL_LINES_CHANGED", function() PruneSoon(2) end)
 
+
+--------------------------------------------------------------------------------
+-- Where unknown recipes come from (Gaps tab), besides the game's own source text:
+--   trainers and vendors you visit (saved on the recipe as c.t), and boss / trash / quest
+--   drops read live from the Forever Dungeon Journal addon when it is loaded
+--------------------------------------------------------------------------------
+local STATE_WORDS = { available = true, unavailable = true, used = true, header = true }
+local MAX_PLACES = 4   -- trainers + vendors remembered per recipe
+local PREFIXES = { pattern = true, plans = true, recipe = true, formula = true, schematic = true,
+    blueprint = true, manual = true, design = true }
+
+local function Key(s)
+    if type(s) ~= "string" or s == "" then return nil end
+    return (s:lower():gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- "Pattern: Red Linen Robe" -> "red linen robe" (nil when the name is not a recipe item)
+local function RecipeItemKey(name, force)
+    if type(name) ~= "string" then return nil end
+    local pre, rest = name:match("^%s*([^:]+):%s*(.+)$")
+    if pre and (force or PREFIXES[pre:lower()]) then return Key(rest) end
+    return nil
+end
+
+-- Saves one trainer / vendor on a recipe; true when it is new for that recipe
+local function Mark(c, kind, who, where, skill)
+    c.t = c.t or {}
+    for _, t in ipairs(c.t) do
+        if t.n == who and t.k == kind then
+            t.z, t.s = where, skill
+            return false
+        end
+    end
+    if #c.t >= MAX_PLACES then return false end
+    c.t[#c.t + 1] = { k = kind, n = who, z = where, s = skill }
+    return true
+end
+
+local function Here()
+    local zone = (GetRealZoneText and GetRealZoneText()) or (GetZoneText and GetZoneText()) or ""
+    local sub = GetSubZoneText and GetSubZoneText() or ""
+    return (sub ~= "" and sub ~= zone) and (sub .. ", " .. zone) or zone
+end
+
+-- Matches names against every recipe of the professions your characters have read
+-- (recipe name and item name), time-budgeted. wanted = { { k = key, s = skill }, ... }
+local markToken = 0
+local function MarkRecipes(kind, wanted, verb)
+    if #wanted == 0 then return end
+    local ids = {}
+    for _, list in pairs(GH.db.allRecipes) do
+        for _, id in ipairs(list) do ids[#ids + 1] = id end
+    end
+    if #ids == 0 then return end
+    local who, where = UnitName("npc") or kind, Here()
+    markToken = markToken + 1
+    local token = markToken
+    local byName, i = {}, 1
+    local function Add(name, id)
+        local k = Key(name)
+        if not k then return end
+        byName[k] = byName[k] or {}
+        byName[k][id] = true
+    end
+    local function Step()
+        if token ~= markToken then return end
+        local stop = debugprofilestop() + 3
+        while i <= #ids do
+            local id = ids[i]
+            i = i + 1
+            local c = GH.db.recipes[id]
+            if not (c and c.n) then c = P.Resolve(id) end
+            if c then
+                Add(c.n, id)
+                if c.o then Add(GH.db.names[c.o], id) end
+            end
+            if debugprofilestop() > stop then
+                C_Timer.After(0, Step)
+                return
+            end
+        end
+        local new, seen = 0, {}
+        for _, w in ipairs(wanted) do
+            for id in pairs(byName[w.k] or {}) do
+                local c = GH.db.recipes[id]
+                if c and not seen[id] then
+                    seen[id] = true
+                    if Mark(c, kind, who, where, w.s) then new = new + 1 end
+                end
+            end
+        end
+        if next(seen) then GH.Fire("DATA") end
+        if new > 0 then
+            GH.Print(("%s %s %d recipe%s: marked on the Gaps tab."):format(who, verb, new, new == 1 and "" or "s"))
+        end
+    end
+    Step()
+end
+
+-- Trainers: every service line is a recipe name
+local function ReadTrainer()
+    if not GH.db or not GetNumTrainerServices or not GetTrainerServiceInfo then return end
+    local ok, num = pcall(GetNumTrainerServices)
+    if not ok or not num or num == 0 then return end
+    local wanted = {}
+    for i = 1, num do
+        local t = { pcall(GetTrainerServiceInfo, i) }
+        if t[1] and type(t[2]) == "string" then
+            local state
+            for k = 3, 9 do
+                if type(t[k]) == "string" and STATE_WORDS[t[k]] then state = t[k]; break end
+            end
+            local skill
+            if GetTrainerServiceSkillReq then
+                local ok2, _, lvl = pcall(GetTrainerServiceSkillReq, i)
+                if ok2 and tonumber(lvl) and tonumber(lvl) > 0 then skill = tonumber(lvl) end
+            end
+            local k = Key(t[2])
+            if k and state ~= "header" then wanted[#wanted + 1] = { k = k, s = skill } end
+        end
+    end
+    MarkRecipes("Trainer", wanted, "teaches")
+end
+
+-- Vendors (incl. the Waylaid supply quartermasters): only items named "Pattern: ...", "Plans: ..."
+local function MerchantName(i)
+    local ok, link = pcall(GetMerchantItemLink, i)
+    local name = ok and type(link) == "string" and link:match("%[(.-)%]")
+    if name then return name end
+    if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
+        local ok2, info = pcall(C_MerchantFrame.GetItemInfo, i)
+        if ok2 and type(info) == "table" then return info.name end
+    end
+    if GetMerchantItemInfo then
+        local ok3, n = pcall(GetMerchantItemInfo, i)
+        if ok3 and type(n) == "string" then return n end
+    end
+end
+
+local function ReadVendor()
+    if not GH.db or not GetMerchantNumItems or not GetMerchantItemLink then return end
+    local ok, num = pcall(GetMerchantNumItems)
+    if not ok or not num or num == 0 then return end
+    local wanted = {}
+    for i = 1, num do
+        local k = RecipeItemKey(MerchantName(i))
+        if k then wanted[#wanted + 1] = { k = k } end
+    end
+    MarkRecipes("Vendor", wanted, "sells")
+end
+
+local trainTimer, vendTimer
+local function TrainerSoon()
+    if trainTimer then trainTimer:Cancel() end
+    trainTimer = C_Timer.NewTimer(0.4, function() trainTimer = nil; ReadTrainer() end)
+end
+local function VendorSoon()
+    if vendTimer then vendTimer:Cancel() end
+    vendTimer = C_Timer.NewTimer(0.6, function() vendTimer = nil; ReadVendor() end)
+end
+GH.On("TRAINER_SHOW", TrainerSoon)
+GH.On("TRAINER_UPDATE", TrainerSoon)
+GH.On("MERCHANT_SHOW", VendorSoon)
+GH.On("MERCHANT_UPDATE", VendorSoon)
+P.ReadTrainer, P.ReadVendor = ReadTrainer, ReadVendor
+
+-- Dungeon Journal drops: [recipe key] = { "Boss (Dungeon)", ... }, built once on first use
+local drops
+local function JournalDrops()
+    if drops then return drops end
+    local ns = _G.ForeverDungeonJournal_NS
+    local db = type(ns) == "table" and type(ns.DB) == "table" and ns.DB
+    if not db then return nil end
+    drops = {}
+    local function Add(name, isRecipe, text)
+        local k = RecipeItemKey(name, isRecipe)
+        if not k then return end
+        local list = drops[k] or {}
+        drops[k] = list
+        for _, s in ipairs(list) do if s == text then return end end
+        list[#list + 1] = text
+    end
+    for dname, d in pairs(db) do
+        if type(d) == "table" then
+            for _, b in ipairs(type(d.bosses) == "table" and d.bosses or {}) do
+                if type(b) == "table" and type(b.loot) == "table" and not b.recipeTab then
+                    for _, it in ipairs(b.loot) do
+                        if type(it) == "table" and type(it[2]) == "string" then
+                            local isRecipe = type(it[3]) == "string" and it[3]:find("^Recipe") ~= nil
+                            local text = b.trash and ("Trash in " .. dname .. (type(it[5]) == "string" and (": " .. it[5]) or ""))
+                                or ("Drop: " .. tostring(b.name or "a boss") .. " (" .. dname .. ")")
+                            Add(it[2], isRecipe, text)
+                        end
+                    end
+                end
+            end
+            for _, q in ipairs(type(d.quests) == "table" and d.quests or {}) do
+                if type(q) == "table" and type(q.rewardItems) == "table" then
+                    for _, it in ipairs(q.rewardItems) do
+                        if type(it) == "table" then
+                            Add(it[2], false, "Quest reward: " .. tostring(q.name or "a quest") .. " (" .. dname .. ")")
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return drops
+end
+
+local function DropsFor(c)
+    local idx = JournalDrops()
+    if not idx or not c then return nil end
+    return idx[Key(c.n) or ""] or (c.o and idx[Key(GH.db.names[c.o]) or ""]) or nil
+end
+
+-- Short kind for list rows: "Trainer", "Vendor", "Drop", "Quest" (nil = use the game's text)
+function P.SourceKind(c)
+    if not c then return nil end
+    if c.t and c.t[1] then return c.t[1].k or "Trainer" end
+    local d = DropsFor(c)
+    if d then return d[1]:match("^Quest") and "Quest" or "Drop" end
+    return nil
+end
+
+-- Detail lines (nil when we know nothing beyond the game's own source text)
+function P.SourceLines(c)
+    if not c then return nil end
+    local lines = {}
+    for _, t in ipairs(c.t or {}) do
+        lines[#lines + 1] = (t.k or "Trainer") .. ": " .. t.n .. ((t.z and t.z ~= "") and (" (" .. t.z .. ")") or "")
+            .. (t.s and (", needs skill " .. t.s) or "")
+    end
+    local d = DropsFor(c)
+    if d then
+        for i = 1, math.min(3, #d) do lines[#lines + 1] = d[i] end
+        if #d > 3 then lines[#lines + 1] = ("...and %d more in the Dungeon Journal"):format(#d - 3) end
+    end
+    return #lines > 0 and lines or nil
+end
+
+function P.DropCount()
+    local idx = JournalDrops()
+    if not idx then return nil end
+    local n = 0
+    for _ in pairs(idx) do n = n + 1 end
+    return n
+end

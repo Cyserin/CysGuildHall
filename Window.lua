@@ -152,7 +152,7 @@ function I.Gaps(pid, q, catKey)
                 local inCat = not catKey or (gr .. ">" .. ca) == catKey
                 if inCat and (q == "" or name:lower():find(q, 1, true) or (c and c.n and c.n:lower():find(q, 1, true))) then
                     out[#out + 1] = { kind = "recipe", id = id, name = name, crafters = 0, online = 0, group = gr, cat = ca, gap = true,
-                        src = I.SourceKind(c and c.src) }
+                        src = GH.Prof.SourceKind(c) or I.SourceKind(c and c.src) }
                 end
             end
         end
@@ -717,11 +717,17 @@ function PaintDetail()
         -- nobody can make it: show where the recipe is learned instead
         d.cLabel:SetText("Where to learn it")
         d.more:SetText("")
-        if c.src == nil then
+        local lines = GH.Prof.SourceLines(c)
+        if lines then
+            -- trainers / vendors you visited, Dungeon Journal drops, then the game's own source text
+            if type(c.src) == "string" and c.src ~= "" then lines[#lines + 1] = c.src end
+            d.src:SetText(table.concat(lines, "\n"))
+            d.src:SetTextColor(T.text[1], T.text[2], T.text[3])
+        elseif c.src == nil then
             d.src:SetText("Not read yet: open your " .. (pid and GH.ProfName(pid) or "profession") .. " window once more.")
             d.src:SetTextColor(SOFT[1], SOFT[2], SOFT[3])
         elseif c.src == "" then
-            d.src:SetText("The game gives no source for this recipe (most likely a trainer).")
+            d.src:SetText("The game gives no source for this recipe (most likely a trainer: visit one and it gets marked).")
             d.src:SetTextColor(SOFT[1], SOFT[2], SOFT[3])
         else
             d.src:SetText(c.src)

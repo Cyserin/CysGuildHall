@@ -308,7 +308,11 @@ local function Check()
         for pid, l in pairs(GH.db.allRecipes) do lists[#lists + 1] = GH.ProfName(pid) .. " " .. #l end
         print("  full recipe lists (Gaps): " .. (#lists > 0 and table.concat(lists, ", ") or "none yet"))
     end
-    print(("  recipe details cached: %d"):format(Count(GH.db.recipes)))
+    local marked = 0
+    for _, c in pairs(GH.db.recipes) do if c.t and #c.t > 0 then marked = marked + 1 end end
+    local dc = GH.Prof and GH.Prof.DropCount and GH.Prof.DropCount()
+    print(("  recipe details cached: %d, with trainer / vendor marks: %d, Dungeon Journal recipe drops: %s"):format(
+        Count(GH.db.recipes), marked, dc and tostring(dc) or "addon not loaded"))
 end
 
 SLASH_CYSGUILDHALL1 = "/guildhall"

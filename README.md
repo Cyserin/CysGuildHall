@@ -9,7 +9,7 @@ Works for any guild. Every member who runs it shares the recipes they know, so a
 - **Reagents with have / need**: counts from your bags and bank, with a Make -/+ for several crafts.
 - **Professions overview**: every guild profession with its number of crafters and best skill; click one to browse its recipes.
 - **Craft requests**: ask the guild to make something; a crafter claims it, marks the mats ready and done.
-- **Gaps tab**: professions nobody in the guild has, and recipes nobody knows yet (from your own characters' recipe lists).
+- **Gaps tab**: professions nobody in the guild has, and recipes nobody knows yet (from your own characters' recipe lists), with where to learn them: trainers and vendors you visit (Waylaid supply quartermasters included) are marked automatically, and boss / quest drops come from the Forever Dungeon Journal addon when you have it.
 - **Options**: tooltip names, chat notes, minimap button, how long done requests stay listed, and your characters' professions (dropped ones are removed by themselves at login).
 - **Guild crafters on item tooltips** (`/guildhall tooltip` to turn off).
 - **Quiet sync**: hidden guild addon messages, throttled, paused in combat. Only shares professions, skill levels and recipe IDs.
