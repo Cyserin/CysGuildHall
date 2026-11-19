@@ -1,0 +1,208 @@
+--------------------------------------------------------------------------------
+-- Cys's Guild Hall - look
+-- The Cys palette: dark flat panels, soft antique gold edges, white text with gold labels.
+-- When Cys's UI is loaded its colors are used (so its Border color setting is followed).
+--------------------------------------------------------------------------------
+local GH = CysGuildHall
+local S = {}
+GH.Style = S
+
+local function Hex(hex, a)
+    return { tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, a or 1 }
+end
+
+local OWN = {
+    bg = Hex("16130F", 0.97), header = Hex("1B1713"), field = Hex("0E0C0A"), card = Hex("1C1814"),
+    cardHover = Hex("231E19"), button = Hex("201B16"), selected = Hex("27211B"), line = Hex("332C24"),
+    border = Hex("D9A421", 0.7), brand = Hex("D9A421"), glow = Hex("FFD100"), accent = Hex("FFD100"),
+    text = Hex("E0E0E0"), dim = Hex("8A8A8A"), green = Hex("4FD66B"), danger = Hex("FF4040"),
+}
+
+-- Colors: Cys's UI's table when present (read when the panel is built), else our own
+function S.T()
+    local W = CysUI and CysUI.W
+    if W and W.T and W.T.border then
+        local T = W.T
+        -- fill gaps so every key we use exists
+        for k, v in pairs(OWN) do if T[k] == nil then T[k] = v end end
+        return T
+    end
+    return OWN
+end
+
+local function CUIW() return CysUI and CysUI.W end
+
+function S.Tex(parent, layer, color, sublevel)
+    local t = parent:CreateTexture(nil, layer or "BACKGROUND", nil, sublevel or 0)
+    t:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
+    local W = CUIW()
+    if W and W.TrackEdge then
+        local T = S.T()
+        if color == T.border then W.TrackEdge(t) end
+    end
+    return t
+end
+
+function S.Border(parent, color, layer)
+    local e = {}
+    for i = 1, 4 do e[i] = S.Tex(parent, layer or "BORDER", color) end
+    e[1]:SetPoint("TOPLEFT");    e[1]:SetPoint("TOPRIGHT");    e[1]:SetHeight(1)
+    e[2]:SetPoint("BOTTOMLEFT"); e[2]:SetPoint("BOTTOMRIGHT"); e[2]:SetHeight(1)
+    e[3]:SetPoint("TOPLEFT");    e[3]:SetPoint("BOTTOMLEFT");  e[3]:SetWidth(1)
+    e[4]:SetPoint("TOPRIGHT");   e[4]:SetPoint("BOTTOMRIGHT"); e[4]:SetWidth(1)
+    return e
+end
+
+function S.SetBorder(edges, color)
+    for i = 1, #edges do edges[i]:SetColorTexture(color[1], color[2], color[3], color[4] or 1) end
+end
+
+function S.Text(parent, size, color, justify)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    fs:SetFont(STANDARD_TEXT_FONT, size or 12, "")
+    fs:SetShadowOffset(1, -1)
+    fs:SetShadowColor(0, 0, 0, 0.8)
+    if color then fs:SetTextColor(color[1], color[2], color[3], color[4] or 1) end
+    fs:SetJustifyH(justify or "LEFT")
+    return fs
+end
+
+-- Flat panel with a 1px edge
+function S.Panel(parent, color, edge)
+    local T = S.T()
+    local f = CreateFrame("Frame", nil, parent)
+    f.bg = S.Tex(f, "BACKGROUND", color or T.card)
+    f.bg:SetAllPoints()
+    f.edges = S.Border(f, edge or T.line)
+    return f
+end
+
+function S.Button(parent, w, h, label)
+    local T = S.T()
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(w, h)
+    b.bg = S.Tex(b, "BACKGROUND", T.button)
+    b.bg:SetAllPoints()
+    b.edges = S.Border(b, T.line)
+    b.label = S.Text(b, 11, T.accent, "CENTER")
+    b.label:SetPoint("CENTER")
+    b.label:SetText(label or "")
+    b:SetScript("OnEnter", function(s) if s:IsEnabled() then S.SetBorder(s.edges, T.glow) end end)
+    b:SetScript("OnLeave", function(s) S.SetBorder(s.edges, T.line) end)
+    function b:SetActive(on)
+        if on then self:Enable(); self:SetAlpha(1) else self:Disable(); self:SetAlpha(0.45); S.SetBorder(self.edges, T.line) end
+    end
+    function b:SetLabel(text) self.label:SetText(text or "") end
+    return b
+end
+
+-- Checkbox: get() -> bool, set(bool)
+function S.Check(parent, label, get, set)
+    local T = S.T()
+    local c = CreateFrame("Button", nil, parent)
+    c:SetHeight(18)
+    local box = CreateFrame("Frame", nil, c)
+    box:SetSize(14, 14)
+    box:SetPoint("LEFT")
+    S.Tex(box, "BACKGROUND", T.field):SetAllPoints()
+    c.edges = S.Border(box, T.border)
+    c.mark = S.Tex(box, "ARTWORK", T.glow)
+    c.mark:SetPoint("TOPLEFT", 3, -3)
+    c.mark:SetPoint("BOTTOMRIGHT", -3, 3)
+    c.label = S.Text(c, 11, T.text)
+    c.label:SetPoint("LEFT", box, "RIGHT", 6, 0)
+    c.label:SetText(label)
+    c:SetWidth(22 + c.label:GetStringWidth())
+    function c:Refresh() self.mark:SetShown(get() and true or false) end
+    c:SetScript("OnClick", function(s) set(not get()); s:Refresh() end)
+    c:Refresh()
+    return c
+end
+
+-- Search box with a dark field and gold edge on focus
+function S.EditBox(parent, w, h)
+    local T = S.T()
+    local e = CreateFrame("EditBox", nil, parent)
+    e:SetSize(w, h)
+    e:SetAutoFocus(false)
+    e:SetFont(STANDARD_TEXT_FONT, 12, "")
+    e:SetTextColor(T.text[1], T.text[2], T.text[3])
+    e:SetTextInsets(6, 6, 0, 0)
+    S.Tex(e, "BACKGROUND", T.field):SetAllPoints()
+    e.edges = S.Border(e, T.line)
+    e:SetScript("OnEditFocusGained", function(s) S.SetBorder(s.edges, T.border) end)
+    e:SetScript("OnEditFocusLost", function(s) S.SetBorder(s.edges, T.line) end)
+    e:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+    e:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
+    e.hint = S.Text(e, 11, T.dim)
+    e.hint:SetPoint("LEFT", 7, 0)
+    return e
+end
+
+-- Stepper: label, then [-] value [+]. values = list; get() -> current value; set(v); fmt(v) -> text
+function S.Stepper(parent, label, values, get, set, fmt)
+    local T = S.T()
+    local s = CreateFrame("Frame", nil, parent)
+    s:SetSize(208, 20)
+    s.label = S.Text(s, 11, T.text)
+    s.label:SetPoint("LEFT")
+    s.label:SetText(label)
+    s.plus = S.Button(s, 18, 18, "+")
+    s.plus:SetPoint("RIGHT")
+    s.value = S.Text(s, 11, T.accent, "CENTER")
+    s.value:SetWidth(58)
+    s.value:SetPoint("RIGHT", s.plus, "LEFT", -2, 0)
+    s.minus = S.Button(s, 18, 18, "-")
+    s.minus:SetPoint("RIGHT", s.value, "LEFT", -2, 0)
+    local function Index()
+        local cur = get()
+        for i, v in ipairs(values) do if v == cur then return i end end
+        for i, v in ipairs(values) do if v >= cur then return i end end
+        return #values
+    end
+    function s:Refresh() self.value:SetText(fmt(get())) end
+    s.minus:SetScript("OnClick", function() local i = Index(); if i > 1 then set(values[i - 1]) end; s:Refresh() end)
+    s.plus:SetScript("OnClick", function() local i = Index(); if i < #values then set(values[i + 1]) end; s:Refresh() end)
+    s:Refresh()
+    return s
+end
+
+-- Money input: gold / silver / copper boxes. :GetAmount() -> copper, :SetAmount(copper), .OnChange()
+function S.MoneyInput(parent)
+    local T = S.T()
+    local m = CreateFrame("Frame", nil, parent)
+    m:SetSize(208, 22)
+    local boxes = {}
+    local defs = { { "g", 58, "Interface\\MoneyFrame\\UI-GoldIcon" }, { "s", 34, "Interface\\MoneyFrame\\UI-SilverIcon" },
+                   { "c", 34, "Interface\\MoneyFrame\\UI-CopperIcon" } }
+    local prev
+    for i, d in ipairs(defs) do
+        local e = S.EditBox(m, d[2], 22)
+        e:SetNumeric(true)
+        e:SetMaxLetters(i == 1 and 6 or 2)
+        e:SetJustifyH("RIGHT")
+        e:SetTextInsets(4, 4, 0, 0)
+        if prev then e:SetPoint("LEFT", prev, "RIGHT", 18, 0) else e:SetPoint("LEFT") end
+        local icon = m:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(12, 12)
+        icon:SetTexture(d[3])
+        icon:SetPoint("LEFT", e, "RIGHT", 3, 0)
+        e:SetScript("OnTextChanged", function(_, user) if user and m.OnChange then m.OnChange() end end)
+        e:SetScript("OnTabPressed", function() local n = boxes[i % 3 + 1]; n:SetFocus(); n:HighlightText() end)
+        boxes[i] = e
+        prev = e
+    end
+    m.boxes = boxes
+    function m:GetAmount()
+        local g, s, c = tonumber(boxes[1]:GetText()) or 0, tonumber(boxes[2]:GetText()) or 0, tonumber(boxes[3]:GetText()) or 0
+        return g * 10000 + s * 100 + c
+    end
+    function m:SetAmount(copper)
+        copper = math.max(0, math.floor((copper or 0) + 0.5))
+        boxes[1]:SetText(tostring(math.floor(copper / 10000)))
+        boxes[2]:SetText(tostring(math.floor(copper / 100) % 100))
+        boxes[3]:SetText(tostring(copper % 100))
+    end
+    function m:ClearFocus() for _, e in ipairs(boxes) do e:ClearFocus() end end
+    return m
+end
