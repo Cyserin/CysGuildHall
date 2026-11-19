@@ -861,8 +861,24 @@ local function Build()
     -- Escape closes the window; every other key passes through to the game.
     -- (Setting key pass-through is blocked in combat, so it is only ever switched off
     -- for the Escape press itself, out of combat.)
-    frame:EnableKeyboard(true)
-    frame:SetPropagateKeyboardInput(true)
+    -- Key pass-through can only be set out of combat. Until it is set, the window does not
+    -- listen to keys at all (a listening window without pass-through would eat movement keys).
+    local function KeysOn()
+        if frame.keysOn or InCombatLockdown() then return end
+        frame:SetPropagateKeyboardInput(true)
+        frame:EnableKeyboard(true)
+        frame.keysOn = true
+    end
+    if InCombatLockdown() then
+        local waiter = CreateFrame("Frame")
+        waiter:RegisterEvent("PLAYER_REGEN_ENABLED")
+        waiter:SetScript("OnEvent", function(w)
+            w:UnregisterAllEvents()
+            KeysOn()
+        end)
+    else
+        KeysOn()
+    end
     frame:SetScript("OnKeyDown", function(f, key)
         if InCombatLockdown() then return end
         if key == "ESCAPE" then
