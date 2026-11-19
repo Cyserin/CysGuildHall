@@ -854,7 +854,24 @@ local function Build()
         if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
         Rebuild()
     end)
-    frame:SetScript("OnHide", function() GameTooltip:Hide() end)
+    frame:SetScript("OnHide", function(f)
+        GameTooltip:Hide()
+        if not InCombatLockdown() then f:SetPropagateKeyboardInput(true) end
+    end)
+    -- Escape closes the window; every other key passes through to the game.
+    -- (Setting key pass-through is blocked in combat, so it is only ever switched off
+    -- for the Escape press itself, out of combat.)
+    frame:EnableKeyboard(true)
+    frame:SetPropagateKeyboardInput(true)
+    frame:SetScript("OnKeyDown", function(f, key)
+        if InCombatLockdown() then return end
+        if key == "ESCAPE" then
+            f:SetPropagateKeyboardInput(false)
+            f:Hide()
+        else
+            f:SetPropagateKeyboardInput(true)
+        end
+    end)
     frame:Hide()
 end
 
@@ -890,6 +907,18 @@ end
 --------------------------------------------------------------------------------
 -- Open / close
 --------------------------------------------------------------------------------
+-- Minimap clicks: open on a tab, or close when already showing that tab
+function W.ToggleTab(tab)
+    if not GH.db then return end
+    if not frame then Build() end
+    if frame:IsShown() and state.tab == tab then
+        frame:Hide()
+        return
+    end
+    frame:Show()
+    if state.tab ~= tab then SetTab(tab) end
+end
+
 function W.Toggle()
     if not GH.db then return end
     if not frame then Build() end

@@ -13,7 +13,7 @@ local function Tooltip(owner, anchor)
     if n > 0 then
         GameTooltip:AddLine(("%d craft %s waiting on you"):format(n, n == 1 and "request" or "requests"), 1, 0.82, 0)
     end
-    GameTooltip:AddLine("Left-click: open", 0.84, 0.77, 0.62)
+    GameTooltip:AddLine("Left-click: crafting", 0.84, 0.77, 0.62)
     GameTooltip:AddLine("Right-click: requests", 0.84, 0.77, 0.62)
     if owner.isMinimap then GameTooltip:AddLine("Drag: move around the minimap", 0.84, 0.77, 0.62) end
     GameTooltip:Show()
@@ -75,7 +75,7 @@ local function Build()
 
     mm:SetScript("OnClick", function(_, button)
         GameTooltip:Hide()
-        if button == "RightButton" then GH.Window.Open(nil, "requests") else GH.Window.Toggle() end
+        GH.Window.ToggleTab(button == "RightButton" and "requests" or "craft")
     end)
     mm:SetScript("OnEnter", function(b) Tooltip(b) end)
     mm:SetScript("OnLeave", function() GameTooltip:Hide() end)
