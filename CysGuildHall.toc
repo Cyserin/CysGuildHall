@@ -2,7 +2,7 @@
 ## Title: Cys's Guild Hall
 ## Notes: Your guild's crafters in one place: search any item to see who can make it, what it takes and what you are missing.
 ## Author: Cyserin
-## Version: 0.3.0
+## Version: 0.3.2
 ## SavedVariables: CysGuildHallDB
 ## OptionalDeps: CysUI, CysAuctionHouse
 ## IconTexture: Interface\Icons\Trade_BlackSmithing

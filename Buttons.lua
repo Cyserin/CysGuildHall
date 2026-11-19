@@ -50,15 +50,15 @@ local function Build()
     mm:RegisterForDrag("LeftButton")
 
     local bg = mm:CreateTexture(nil, "BACKGROUND")
-    bg:SetSize(24, 24)
-    bg:SetPoint("CENTER")
+    bg:SetSize(20, 20)
+    bg:SetPoint("TOPLEFT", 7, -5)
     bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+    -- full square icon inside the ring (no round mask: that squashed it)
     local icon = mm:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(20, 20)
-    icon:SetPoint("CENTER")
+    icon:SetSize(19, 19)
+    icon:SetPoint("TOPLEFT", 6, -6)
     icon:SetTexture(ICON)
-    icon:SetTexCoord(0.06, 0.94, 0.06, 0.94)
-    if icon.SetMask then icon:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask") end
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     mm.icon = icon
     local ring = mm:CreateTexture(nil, "OVERLAY")
     ring:SetSize(53, 53)
@@ -79,8 +79,8 @@ local function Build()
     end)
     mm:SetScript("OnEnter", function(b) Tooltip(b) end)
     mm:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    mm:SetScript("OnMouseDown", function() icon:SetSize(18, 18) end)
-    mm:SetScript("OnMouseUp", function() icon:SetSize(20, 20) end)
+    mm:SetScript("OnMouseDown", function() icon:SetPoint("TOPLEFT", 7, -7) end)
+    mm:SetScript("OnMouseUp", function() icon:SetPoint("TOPLEFT", 6, -6) end)
     mm:SetScript("OnDragStart", function(b)
         GameTooltip:Hide()
         b:SetScript("OnUpdate", function()
@@ -94,7 +94,7 @@ local function Build()
     end)
     mm:SetScript("OnDragStop", function(b)
         b:SetScript("OnUpdate", nil)
-        icon:SetSize(20, 20)
+        icon:SetPoint("TOPLEFT", 6, -6)
     end)
     Place()
 end
@@ -124,8 +124,7 @@ local function BuildProfButton()
     if profBtn or not ProfessionsFrame then return end
     profBtn = CreateFrame("Button", "CysGuildHallProfessionButton", ProfessionsFrame)
     profBtn:SetSize(36, 36)
-    -- outside the right edge, near the bottom (the game's profession tabs run down from the top)
-    profBtn:SetPoint("BOTTOMLEFT", ProfessionsFrame, "BOTTOMRIGHT", 2, 24)
+    profBtn:SetPoint("TOPLEFT", ProfessionsFrame, "TOPRIGHT", 6, -60)
     local bg = profBtn:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0.06, 0.05, 0.04, 0.95)
@@ -151,6 +150,26 @@ local function BuildProfButton()
     end)
     profBtn:SetScript("OnEnter", function(b) Tooltip(b, "ANCHOR_RIGHT") end)
     profBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- sit at the end of the game's own side-tab column (its tab count changes per character)
+    local function Dock()
+        local last
+        local tabs = ProfessionsFrame.rightProfessionTabs
+        if type(tabs) == "table" then
+            for _, t in ipairs(tabs) do
+                if t.IsShown and t:IsShown() then last = t end
+            end
+        end
+        last = last or ProfessionsFrame.ProfessionsOverviewTab
+        profBtn:ClearAllPoints()
+        if last then
+            profBtn:SetPoint("TOP", last, "BOTTOM", 0, -6)
+        else
+            profBtn:SetPoint("TOPLEFT", ProfessionsFrame, "TOPRIGHT", 6, -60)
+        end
+    end
+    ProfessionsFrame:HookScript("OnShow", function() C_Timer.After(0, Dock) end)
+    Dock()
 end
 
 GH.On("ADDON_LOADED", function(name)
