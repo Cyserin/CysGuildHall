@@ -144,7 +144,7 @@ GH.rosterBare = {}   -- [lowercase name without realm] = same entry (realm spell
 GH.rosterCount = 0
 
 local function Bare(full)
-    return ((full or ""):match("^([^%-]+)") or ""):lower()
+    return ((full or ""):match("^([^%-%s]+)") or ""):lower()
 end
 GH.Bare = Bare
 
@@ -179,6 +179,8 @@ local function ReadRoster()
         local name, _, _, level, _, _, _, _, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
         if type(name) == "string" and name ~= "" then
             local e = { online = online and true or false, class = classFile, level = level, raw = name }
+            -- Forever's roster writes "Name Realm" (a space): make it "Name-Realm" like chat names
+            name = name:gsub("^(%S+) (%S+)$", "%1-%2")
             new[GH.Full(name)] = e
             bare[Bare(name)] = e
             if type(guid) == "string" then byGuid[guid] = e end
