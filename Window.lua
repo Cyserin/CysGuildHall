@@ -211,10 +211,12 @@ end
 
 
 -- Item types across the guild: { kind = "cat", key, group, name, count } sorted by group then name
-function I.Categories()
+function I.Categories(pid)
     I.Build()
     local counts = {}
-    for id in pairs(byRecipe) do
+    local set = byRecipe
+    if pid then set = profs[pid] and profs[pid].recipes or {} end
+    for id in pairs(set) do
         local gr, ca = I.Category(id)
         local key = gr .. ">" .. ca
         local e = counts[key]
@@ -294,9 +296,7 @@ local Paint, PaintDetail, SetTab
 
 local function HintText()
     if state.tab == "requests" then return "Search requests..." end
-    if state.cat then return "Search " .. state.cat.name .. "..." end
-    if state.prof then return "Search " .. GH.ProfName(state.prof) .. "..." end
-    return "Search items or recipes..."
+    return "Search all guild crafts..."
 end
 
 local function Rebuild()
@@ -310,43 +310,29 @@ local function Rebuild()
                 list[#list + 1] = { kind = "req", id = r.id, rc = r.rc, name = name, r = r }
             end
         end
-    elseif state.query == "" and not state.prof and not state.cat then
+    elseif state.query ~= "" then
+        -- typing always searches the whole guild (the profession / type you were in comes back when cleared)
+        for _, r in ipairs(I.Search(state.query)) do list[#list + 1] = r end
+    elseif state.cat then
+        -- one item type: its recipes
+        list[1] = { kind = "back" }
+        for _, r in ipairs(I.Search("", state.prof, state.cat.key)) do list[#list + 1] = r end
+    elseif state.prof then
+        -- one profession: its item types, under their groups (Armor, Weapon, ...)
+        list[1] = { kind = "back" }
+        local lastGroup
+        for _, c in ipairs(I.Categories(state.prof)) do
+            if c.group ~= lastGroup then
+                lastGroup = c.group
+                list[#list + 1] = { kind = "group", name = c.group }
+            end
+            list[#list + 1] = c
+        end
+    else
         local profsList = I.Professions()
         if #profsList > 0 then
             list[#list + 1] = { kind = "header", name = "Professions" }
             for _, p in ipairs(profsList) do list[#list + 1] = p end
-            list[#list + 1] = { kind = "header", name = "Item types" }
-            local lastGroup
-            for _, c in ipairs(I.Categories()) do
-                if c.group ~= lastGroup then
-                    lastGroup = c.group
-                    list[#list + 1] = { kind = "group", name = c.group }
-                end
-                list[#list + 1] = c
-            end
-        end
-    else
-        if state.prof or state.cat then list[1] = { kind = "back" } end
-        local results = I.Search(state.query, state.prof, state.cat and state.cat.key)
-        if state.prof and not state.cat and state.query == "" then
-            -- a profession's recipes, grouped by item type
-            table.sort(results, function(a, b)
-                if a.group ~= b.group then return a.group < b.group end
-                if a.cat ~= b.cat then return a.cat < b.cat end
-                if a.name ~= b.name then return a.name < b.name end
-                return a.id < b.id
-            end)
-            local last
-            for _, r in ipairs(results) do
-                local key = r.group .. ">" .. r.cat
-                if key ~= last then
-                    last = key
-                    list[#list + 1] = { kind = "group", name = r.cat }
-                end
-                list[#list + 1] = r
-            end
-        else
-            for _, r in ipairs(results) do list[#list + 1] = r end
         end
     end
     state.results = list
@@ -373,9 +359,9 @@ local function ClickRow(row)
     if d.kind == "prof" then
         SetFilter(d.pid, nil)
     elseif d.kind == "cat" then
-        SetFilter(nil, { key = d.key, name = d.name })
+        SetFilter(state.prof, { key = d.key, name = d.name })
     elseif d.kind == "back" then
-        SetFilter(nil, nil)
+        if state.cat and state.prof then SetFilter(state.prof, nil) else SetFilter(nil, nil) end
     elseif d.kind == "recipe" then
         state.selected, state.req, state.make = d.id, nil, 1
         Paint()
@@ -422,7 +408,7 @@ function Paint()
             elseif d.kind == "group" then
                 row.text:SetFont(STANDARD_TEXT_FONT, 11, "")
                 row.text:SetText(d.name)
-                row.text:SetTextColor(T.dim[1], T.dim[2], T.dim[3])
+                row.text:SetTextColor(T.brand[1], T.brand[2], T.brand[3])
             elseif d.kind == "prof" then
                 row.text:SetPoint("LEFT", 14, 0)
                 row.text:SetText(d.name)
@@ -434,7 +420,7 @@ function Paint()
                 row.text:SetTextColor(T.text[1], T.text[2], T.text[3])
                 row.right:SetText(tostring(d.count))
             elseif d.kind == "back" then
-                row.text:SetText("< All")
+                row.text:SetText((state.cat and state.prof) and ("< " .. GH.ProfName(state.prof)) or "< All professions")
                 row.text:SetTextColor(T.dim[1], T.dim[2], T.dim[3])
                 row.right:SetText(state.cat and state.cat.name or GH.ProfName(state.prof))
             else
@@ -484,7 +470,7 @@ function Paint()
         frame.empty:SetText(state.query == "" and "No craft requests yet.\n\nPick an item on the Crafting tab and press Request." or "No requests match.")
     elseif n == 0 and state.query == "" then
         frame.empty:SetText("No crafters yet.\n\nOpen each of your profession windows once so the addon can read your recipes. Guildmates who run Cys's Guild Hall show up here as they log in.")
-    elseif n == 0 or (n == 1 and list[1].kind == "back") then
+    elseif n == 0 then
         frame.empty:SetText("Nobody in the guild can make that yet.")
     else
         frame.empty:SetText("")
@@ -557,7 +543,7 @@ function PaintDetail()
     d.makeValue:SetText(tostring(make))
     d.minus:SetShown(not req)
     d.plus:SetShown(not req)
-    d.makeLabel:SetText(req and ("For %d"):format(make) or "Make")
+    d.makeLabel:SetText(req and "Quantity" or "Make")
     local reagents = c.r or {}
     local missing = 0
     for i = 1, REAGENT_ROWS do

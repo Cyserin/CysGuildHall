@@ -149,28 +149,37 @@ end
 GH.Bare = Bare
 
 -- roster entry of a member, matched by full name, else by name alone
+GH.rosterGuid = {}   -- [GUID] = same entry
+
 function GH.RosterEntry(full)
-    return GH.roster[full] or GH.rosterBare[Bare(full)]
+    local e = GH.roster[full] or GH.rosterBare[Bare(full)]
+    if not e and full == GH.Me() then
+        local guid = UnitGUID("player")
+        e = guid and GH.rosterGuid[guid]
+    end
+    return e
 end
 
 local function ReadRoster()
     if not IsInGuild() then wipe(GH.roster); GH.rosterCount = 0; return end
     local n = GetNumGuildMembers() or 0
     if n == 0 then return end
-    local new, bare = {}, {}
+    local new, bare, byGuid = {}, {}, {}
     local count = 0
     for i = 1, n do
-        local name, _, _, level, _, _, _, _, online, _, classFile = GetGuildRosterInfo(i)
+        local name, _, _, level, _, _, _, _, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
         if type(name) == "string" and name ~= "" then
             local e = { online = online and true or false, class = classFile, level = level, raw = name }
             new[GH.Full(name)] = e
             bare[Bare(name)] = e
+            if type(guid) == "string" then byGuid[guid] = e end
             count = count + 1
         end
     end
     if count > 0 then
         GH.roster = new
         GH.rosterBare = bare
+        GH.rosterGuid = byGuid
         GH.rosterCount = count
         GH.Fire("ROSTER")
     end
