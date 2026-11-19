@@ -129,7 +129,14 @@ end
 
 -- Recipes nobody in the guild knows, from the full recipe lists your characters read.
 -- pid = one profession (nil = all lists); q = name filter
-function I.Gaps(pid, q)
+-- Short kind of a recipe source text: "Drop", "Vendor", "Quest"... (nil when unknown)
+function I.SourceKind(src)
+    if type(src) ~= "string" or src == "" then return nil end
+    local plain = src:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    return plain:match("^%s*([^:|\n]-)%s*:")
+end
+
+function I.Gaps(pid, q, catKey)
     I.Build()
     q = q and q:lower() or ""
     local pids = {}
@@ -141,9 +148,11 @@ function I.Gaps(pid, q)
                 local c = GH.Prof.Resolve(id)
                 if c and not c.p then c.p = p end
                 local name = I.RecipeName(id)
-                if q == "" or name:lower():find(q, 1, true) or (c and c.n and c.n:lower():find(q, 1, true)) then
-                    local gr, ca = I.Category(id)
-                    out[#out + 1] = { kind = "recipe", id = id, name = name, crafters = 0, online = 0, group = gr, cat = ca, gap = true }
+                local gr, ca = I.Category(id)
+                local inCat = not catKey or (gr .. ">" .. ca) == catKey
+                if inCat and (q == "" or name:lower():find(q, 1, true) or (c and c.n and c.n:lower():find(q, 1, true))) then
+                    out[#out + 1] = { kind = "recipe", id = id, name = name, crafters = 0, online = 0, group = gr, cat = ca, gap = true,
+                        src = I.SourceKind(c and c.src) }
                 end
             end
         end
@@ -151,6 +160,26 @@ function I.Gaps(pid, q)
     table.sort(out, function(a, b)
         if a.name ~= b.name then return a.name < b.name end
         return a.id < b.id
+    end)
+    return out
+end
+
+-- Item types of one profession's unknown recipes, like I.Categories
+function I.GapCategories(pid)
+    local counts, out = {}, {}
+    for _, r in ipairs(I.Gaps(pid)) do
+        local key = r.group .. ">" .. r.cat
+        local e = counts[key]
+        if not e then
+            e = { kind = "cat", key = key, group = r.group, name = r.cat, count = 0 }
+            counts[key] = e
+            out[#out + 1] = e
+        end
+        e.count = e.count + 1
+    end
+    table.sort(out, function(a, b)
+        if a.group ~= b.group then return a.group < b.group end
+        return a.name < b.name
     end)
     return out
 end
@@ -300,8 +329,16 @@ local function ItemTip(owner, itemID)
     GameTooltip:Show()
 end
 
+-- The game forgets item data now and then; the last known quality is kept so names never flash white
 local function QualityColor(itemID)
     local q = itemID and C_Item.GetItemQualityByID(itemID)
+    if itemID then
+        if q then
+            if GH.db.quality[itemID] ~= q then GH.db.quality[itemID] = q end
+        else
+            q = GH.db.quality[itemID]
+        end
+    end
     if q and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q] then
         local c = ITEM_QUALITY_COLORS[q]
         return c.r, c.g, c.b
@@ -355,9 +392,20 @@ local function Rebuild()
     elseif state.tab == "gaps" then
         if state.query ~= "" then
             for _, r in ipairs(I.Gaps(nil, state.query)) do list[#list + 1] = r end
-        elseif state.gapProf then
+        elseif state.gapProf and state.gapCat then
             list[1] = { kind = "back" }
-            for _, r in ipairs(I.Gaps(state.gapProf)) do list[#list + 1] = r end
+            for _, r in ipairs(I.Gaps(state.gapProf, nil, state.gapCat.key)) do list[#list + 1] = r end
+        elseif state.gapProf then
+            -- item types under their groups, like the Crafting tab
+            list[1] = { kind = "back" }
+            local lastGroup
+            for _, c in ipairs(I.GapCategories(state.gapProf)) do
+                if c.group ~= lastGroup then
+                    lastGroup = c.group
+                    list[#list + 1] = { kind = "group", name = c.group }
+                end
+                list[#list + 1] = c
+            end
         else
             local pids, seen = {}, {}
             for _, pid in ipairs(GH.Prof.CRAFTS) do pids[#pids + 1] = pid; seen[pid] = true end
@@ -443,10 +491,14 @@ local function ClickRow(row)
     local d = row.data
     if not d then return end
     if d.kind == "gapprof" then
-        state.gapProf, state.offset = d.pid, 0
+        state.gapProf, state.gapCat, state.offset = d.pid, nil, 0
+        Rebuild()
+    elseif d.kind == "cat" and state.tab == "gaps" then
+        state.gapCat, state.offset = { key = d.key, name = d.name }, 0
         Rebuild()
     elseif d.kind == "back" and state.tab == "gaps" then
-        state.gapProf, state.offset = nil, 0
+        if state.gapCat then state.gapCat = nil else state.gapProf = nil end
+        state.offset = 0
         Rebuild()
     elseif d.kind == "prof" then
         SetFilter(d.pid, nil)
@@ -518,9 +570,9 @@ function Paint()
                 row.text:SetTextColor(T.text[1], T.text[2], T.text[3])
                 row.right:SetText(tostring(d.count))
             elseif d.kind == "back" and state.tab == "gaps" then
-                row.text:SetText("< All professions")
+                row.text:SetText(state.gapCat and ("< " .. GH.ProfName(state.gapProf)) or "< All professions")
                 row.text:SetTextColor(T.accent[1], T.accent[2], T.accent[3])
-                row.right:SetText(GH.ProfName(state.gapProf))
+                row.right:SetText(state.gapCat and state.gapCat.name or GH.ProfName(state.gapProf))
             elseif d.kind == "back" then
                 row.text:SetText((state.cat and state.prof) and ("< " .. GH.ProfName(state.prof)) or "< All professions")
                 row.text:SetTextColor(T.accent[1], T.accent[2], T.accent[3])
@@ -540,7 +592,11 @@ function Paint()
                     if not GH.Requests.IsActive(r) then row.text:SetTextColor(0.55, 0.55, 0.55) end
                 elseif d.gap then
                     row.text:SetText(d.name)
-                    row.right:SetText(d.cat or "")
+                    if state.gapCat and state.query == "" then
+                        row.right:SetText(d.src or "")
+                    else
+                        row.right:SetText(d.cat or "")
+                    end
                 else
                     row.text:SetText(d.name)
                     if d.online > 0 then
@@ -656,9 +712,23 @@ function PaintDetail()
             r:Hide()
         end
     end
+    d.src:SetShown(#crafters == 0)
     if #crafters == 0 then
-        d.more:SetText("Nobody in the guild knows this recipe yet.")
+        -- nobody can make it: show where the recipe is learned instead
+        d.cLabel:SetText("Where to learn it")
+        d.more:SetText("")
+        if c.src == nil then
+            d.src:SetText("Not read yet: open your " .. (pid and GH.ProfName(pid) or "profession") .. " window once more.")
+            d.src:SetTextColor(SOFT[1], SOFT[2], SOFT[3])
+        elseif c.src == "" then
+            d.src:SetText("The game gives no source for this recipe (most likely a trainer).")
+            d.src:SetTextColor(SOFT[1], SOFT[2], SOFT[3])
+        else
+            d.src:SetText(c.src)
+            d.src:SetTextColor(T.text[1], T.text[2], T.text[3])
+        end
     else
+        d.cLabel:SetText("Can make it")
         d.more:SetText(#crafters > CRAFTER_ROWS and ("+%d more"):format(#crafters - CRAFTER_ROWS) or "")
     end
 
@@ -713,7 +783,7 @@ function PaintDetail()
         SetButton(d.btnA, acts[1])
         SetButton(d.btnB, acts[2])
     elseif #crafters == 0 then
-        d.actText:SetText("Nobody can make this yet.")
+        d.actText:SetText("Nobody in the guild can make this yet.")
         d.actText:SetTextColor(T.dim[1], T.dim[2], T.dim[3])
         SetButton(d.btnA, nil)
         SetButton(d.btnB, nil)
@@ -1062,6 +1132,14 @@ local function Build()
         r.right:SetPoint("RIGHT")
         d.crafters[i] = r
     end
+    d.cLabel = cLabel
+    d.src = S.Text(inner, 12, T.text)
+    d.src:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 0, -6)
+    d.src:SetPoint("RIGHT", inner, "RIGHT", -12, 0)
+    d.src:SetHeight(CRAFTER_ROWS * 18)
+    d.src:SetJustifyV("TOP")
+    d.src:SetSpacing(2)
+    d.src:Hide()
     d.more = S.Text(inner, 10, T.dim)
     d.more:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 17, -6 - CRAFTER_ROWS * 18)
 

@@ -214,6 +214,16 @@ function P.Scan()
             i = i + 1
             local ok, info = pcall(C_TradeSkillUI.GetRecipeInfo, id)
             if ok and info then all[#all + 1] = id end
+            -- where an unknown recipe is learned (drop, vendor, quest...): the game only answers
+            -- while the profession window is open, so it is saved now for the Gaps tab
+            if ok and info and not info.learned and C_TradeSkillUI.GetRecipeSourceText then
+                local c = P.Resolve(id)
+                if c then
+                    local ok2, src = pcall(C_TradeSkillUI.GetRecipeSourceText, id)
+                    c.src = (ok2 and type(src) == "string") and src or ""
+                    c.p = c.p or pid
+                end
+            end
             if ok and info and info.learned then
                 learned[#learned + 1] = id
                 local c = P.Resolve(id, true)

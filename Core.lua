@@ -228,6 +228,7 @@ GH.On("ADDON_LOADED", function(name)
     for k, v in pairs(DEFAULTS) do if db.settings[k] == nil then db.settings[k] = v end end
     db.recipes = db.recipes or {}   -- [recipeID] = { o = itemID, q = qty, n = recipe name, p = profID, r = { {itemID, qty}, ... } }
     db.names = db.names or {}       -- [itemID] = name (search works before item data loads)
+    db.quality = db.quality or {}   -- [itemID] = quality (names keep their color while item data reloads)
     db.profNames = db.profNames or {} -- [profID] = name
     db.mine = db.mine or {}         -- [full] = true for characters on this account (never pruned)
     db.allRecipes = db.allRecipes or {} -- [profID] = { every recipe ID of that profession, learned or not } (Gaps tab)
