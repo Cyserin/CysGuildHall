@@ -287,6 +287,9 @@ local function Ago(t)
     return days .. (days == 1 and " day ago" or " days ago")
 end
 
+-- warm parchment for secondary text (easier to read than grey on the dark panel)
+local SOFT = { 0.84, 0.77, 0.62, 1 }
+
 local STATE_SHORT = { open = "open", claimed = "claimed", ready = "mats ready", done = "done", cancelled = "cancelled" }
 
 --------------------------------------------------------------------------------
@@ -304,9 +307,11 @@ local function Rebuild()
     local list = {}
     if state.tab == "requests" then
         local q = state.query:lower()
+        local now = GetServerTime()
         for _, r in ipairs(GH.Requests.All()) do
             local name = I.RecipeName(r.rc)
-            if q == "" or name:lower():find(q, 1, true) or GH.Short(r.by):lower():find(q, 1, true) then
+            local visible = r.st ~= "cancelled" and not (r.st == "done" and now - (r.rev or 0) > 86400)
+            if visible and (q == "" or name:lower():find(q, 1, true) or GH.Short(r.by):lower():find(q, 1, true)) then
                 list[#list + 1] = { kind = "req", id = r.id, rc = r.rc, name = name, r = r }
             end
         end
@@ -421,7 +426,7 @@ function Paint()
                 row.right:SetText(tostring(d.count))
             elseif d.kind == "back" then
                 row.text:SetText((state.cat and state.prof) and ("< " .. GH.ProfName(state.prof)) or "< All professions")
-                row.text:SetTextColor(T.dim[1], T.dim[2], T.dim[3])
+                row.text:SetTextColor(T.accent[1], T.accent[2], T.accent[3])
                 row.right:SetText(state.cat and state.cat.name or GH.ProfName(state.prof))
             else
                 local c = GH.db.recipes[d.kind == "req" and d.rc or d.id]
@@ -499,6 +504,7 @@ function PaintDetail()
     local d = frame.detail
     local id = state.selected
     local req = state.req and GH.Requests.Get(state.req)
+    if req and req.st == "cancelled" then req, state.req = nil, nil end
     if state.tab == "requests" and not req then id = nil end
     if not id then
         d.box:Hide()
@@ -654,7 +660,7 @@ local function Build()
     local title = S.Text(header, 14, T.brand)
     title:SetPoint("LEFT", 10, 0)
     title:SetText("Cys's Guild Hall")
-    frame.guild = S.Text(header, 11, T.dim)
+    frame.guild = S.Text(header, 11, SOFT)
     frame.guild:SetPoint("LEFT", title, "RIGHT", 10, -1)
     local close = S.Button(header, 22, 22, "x")
     close:SetPoint("RIGHT", -4, 0)
@@ -707,7 +713,7 @@ local function Build()
         row.icon:SetSize(16, 16)
         row.icon:SetPoint("LEFT", 6, 0)
         row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        row.right = S.Text(row, 10, T.dim, "RIGHT")
+        row.right = S.Text(row, 10, SOFT, "RIGHT")
         row.right:SetPoint("RIGHT", -4, 0)
         row.text = S.Text(row, 12, T.text)
         row.text:SetWordWrap(false)
@@ -758,7 +764,7 @@ local function Build()
     d.name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -2)
     d.name:SetPoint("RIGHT", inner, "RIGHT", -12, 0)
     d.name:SetWordWrap(false)
-    d.sub = S.Text(inner, 11, T.dim)
+    d.sub = S.Text(inner, 11, SOFT)
     d.sub:SetPoint("TOPLEFT", d.name, "BOTTOMLEFT", 0, -4)
 
     local cLabel = Label(inner, "Can make it")
@@ -774,7 +780,7 @@ local function Build()
         r.dot:SetPoint("LEFT", 2, 0)
         r.text = S.Text(r, 12, T.text)
         r.text:SetPoint("LEFT", r.dot, "RIGHT", 8, 0)
-        r.right = S.Text(r, 11, T.dim, "RIGHT")
+        r.right = S.Text(r, 11, SOFT, "RIGHT")
         r.right:SetPoint("RIGHT")
         d.crafters[i] = r
     end
@@ -791,7 +797,7 @@ local function Build()
     d.makeValue:SetPoint("RIGHT", plus, "LEFT", -2, 0)
     local minus = S.Button(inner, 18, 18, "-")
     minus:SetPoint("RIGHT", d.makeValue, "LEFT", -2, 0)
-    d.makeLabel = S.Text(inner, 11, T.dim, "RIGHT")
+    d.makeLabel = S.Text(inner, 11, SOFT, "RIGHT")
     d.makeLabel:SetPoint("RIGHT", minus, "LEFT", -6, 0)
     d.plus, d.minus = plus, minus
     plus:SetScript("OnClick", function() state.make = math.min(99, state.make + 1); PaintDetail() end)
@@ -888,6 +894,17 @@ function W.Toggle()
     if not GH.db then return end
     if not frame then Build() end
     frame:SetShown(not frame:IsShown())
+end
+
+-- open on one profession's item types (from the profession window button)
+function W.OpenProfession(pid)
+    if not GH.db then return end
+    if not frame then Build() end
+    frame:Show()
+    if state.tab ~= "craft" then SetTab("craft") end
+    if frame.search:GetText() ~= "" then frame.search:SetText("") end
+    I.Build()
+    SetFilter(pid and profs[pid] and pid or nil, nil)
 end
 
 function W.Open(query, tab)

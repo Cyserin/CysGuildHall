@@ -296,6 +296,10 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         GH.Print("crafter names on item tooltips " .. (GH.db.settings.tooltip and "on" or "off") .. ".")
     elseif msg == "requests" then
         if GH.Window then GH.Window.Open(nil, "requests") end
+    elseif msg == "minimap" then
+        GH.db.settings.minimapHide = not GH.db.settings.minimapHide
+        if GH.UpdateMinimapButton then GH.UpdateMinimapButton() end
+        GH.Print("minimap button " .. (GH.db.settings.minimapHide and "hidden" or "shown") .. ".")
     elseif msg == "notify" then
         GH.db.settings.notify = not GH.db.settings.notify
         GH.Print("craft request notes in your chat window " .. (GH.db.settings.notify and "on" or "off") .. ".")
@@ -303,7 +307,7 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     elseif msg == "help" then
-        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, check, sync, tooltip, notify.")
+        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, minimap, check, sync, tooltip, notify.")
     elseif msg ~= "" then
         if GH.Window then GH.Window.Open(msg) end
     else
