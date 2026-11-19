@@ -52,8 +52,21 @@ end
 --------------------------------------------------------------------------------
 -- Names. Everything is stored as "Name-Realm".
 --------------------------------------------------------------------------------
+-- The realm part the game puts in player names. On Forever UnitName("player") gives the
+-- character's realm (e.g. Valorguard) while GetNormalizedRealmName gives an internal server name.
 function GH.MyRealm()
-    return (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName() or ""):gsub("[%s%-]", "")
+    if GH._realm then return GH._realm end
+    local _, r = UnitName("player")
+    if (not r or r == "") and UnitFullName then
+        local _, r2 = UnitFullName("player")
+        r = r2
+    end
+    if not r or r == "" then r = GetNormalizedRealmName and GetNormalizedRealmName() end
+    if r and r ~= "" then
+        GH._realm = (r:gsub("[%s%-]", ""))
+        return GH._realm
+    end
+    return ((GetRealmName() or ""):gsub("[%s%-]", ""))
 end
 
 function GH.Full(name, realm)
@@ -88,6 +101,16 @@ function GH.Guild()
     if not key or not GH.db then return nil end
     local g = GH.db.guilds[key]
     if not g then
+        -- 0.1.x keyed guilds by GetNormalizedRealmName(): move that data over once
+        local old = GetNormalizedRealmName and GetNormalizedRealmName()
+        local gname = GetGuildInfo("player")
+        old = old and gname and (old .. "-" .. gname)
+        if old and old ~= key and GH.db.guilds[old] then
+            g = GH.db.guilds[old]
+            GH.db.guilds[old] = nil
+            GH.db.guilds[key] = g
+            return g
+        end
         g = { members = {} }
         GH.db.guilds[key] = g
     end
@@ -174,7 +197,7 @@ end)
 --------------------------------------------------------------------------------
 -- Saved data
 --------------------------------------------------------------------------------
-local DEFAULTS = { tooltip = true }
+local DEFAULTS = { tooltip = true, notify = true }
 
 GH.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end
@@ -232,6 +255,15 @@ local function Check()
         print(("  crafters known: %d, different recipes: %d, without details: %d"):format(crafters, recipes, unresolved))
         local re = GH.RosterEntry(GH.Me())
         print(("  you are %s; roster has you as %s"):format(GH.Me(), re and tostring(re.raw) or "NOT FOUND"))
+        if not re then
+            local n = GetNumGuildMembers() or 0
+            local sample = {}
+            for i = 1, math.min(3, n) do sample[#sample + 1] = tostring((GetGuildRosterInfo(i))) end
+            print("  roster sample: " .. table.concat(sample, ", "))
+        end
+        if GH.Comm and GH.Comm.lastResult ~= nil then
+            print(("  last addon message: result %s (0 = sent)"):format(tostring(GH.Comm.lastResult)))
+        end
         local me = g.members[GH.Me()]
         if me then
             for pid, p in pairs(me.profs or {}) do
@@ -253,11 +285,16 @@ SlashCmdList.CYSGUILDHALL = function(msg)
     elseif msg == "tooltip" then
         GH.db.settings.tooltip = not GH.db.settings.tooltip
         GH.Print("crafter names on item tooltips " .. (GH.db.settings.tooltip and "on" or "off") .. ".")
+    elseif msg == "requests" then
+        if GH.Window then GH.Window.Open(nil, "requests") end
+    elseif msg == "notify" then
+        GH.db.settings.notify = not GH.db.settings.notify
+        GH.Print("craft request notes in your chat window " .. (GH.db.settings.notify and "on" or "off") .. ".")
     elseif msg == "sync" then
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     elseif msg == "help" then
-        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; check, sync, tooltip.")
+        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, check, sync, tooltip, notify.")
     elseif msg ~= "" then
         if GH.Window then GH.Window.Open(msg) end
     else

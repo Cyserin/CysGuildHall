@@ -2,7 +2,7 @@
 ## Title: Cys's Guild Hall
 ## Notes: Your guild's crafters in one place: search any item to see who can make it, what it takes and what you are missing.
 ## Author: Cyserin
-## Version: 0.1.1
+## Version: 0.2.0
 ## SavedVariables: CysGuildHallDB
 ## OptionalDeps: CysUI, CysAuctionHouse
 ## IconTexture: Interface\Icons\INV_Misc_Note_01
@@ -11,5 +11,6 @@ Core.lua
 Style.lua
 Professions.lua
 Comm.lua
+Requests.lua
 Tooltip.lua
 Window.lua

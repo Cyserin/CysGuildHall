@@ -44,6 +44,7 @@ local function Pump()
         else
             if m.start then m.start() end
             local ok, res = pcall(C_ChatInfo.SendAddonMessage, GH.PREFIX, m.text, "GUILD")
+            C.lastResult = ok and res or ("error: " .. tostring(res))
             if ok and type(res) == "number" and THROTTLED[res] then
                 tokens = 0
                 return
@@ -72,6 +73,7 @@ local function InName(name, senderRealm)
     if name:find("-", 1, true) then return name end
     return name .. "-" .. (senderRealm or GH.MyRealm())
 end
+C.OutName, C.InName = OutName, InName
 
 --------------------------------------------------------------------------------
 -- Entry encoding: "pid:skill:max:recipe.recipe.recipe;pid:..." (all base 36)
@@ -165,6 +167,9 @@ function C.Hello(force)
     for name, m in pairs(g.members) do
         items[#items + 1] = OutName(name) .. "=" .. GH.To36(m.rev or 0)
     end
+    for id, r in pairs(g.requests or {}) do
+        items[#items + 1] = "#" .. id .. "=" .. GH.To36(r.rev or 0)
+    end
     table.sort(items)
     local msgs, cur = {}, {}
     local len = 0
@@ -197,6 +202,47 @@ local function Answer(sender, theirs)
             local delay = (name == me) and (0.5 + math.random() * 2) or (4 + math.random() * 12)
             C.SendEntry(name, delay)
         end
+    end
+    for id, r in pairs(g.requests or {}) do
+        if (theirs["#" .. id] or 0) < (r.rev or 0) then
+            C.SendRequest(r, (r.by == me) and (0.5 + math.random() * 2) or (4 + math.random() * 12))
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Craft requests: one message each
+-- "R~id~recipe~qty~by~at~state~crafter~rev" (numbers base 36)
+--------------------------------------------------------------------------------
+local pendingReq = {}   -- [id] = rev waiting to be sent
+
+function C.SendRequest(r, delay)
+    if not r or not r.id then return end
+    local id, rev = r.id, r.rev
+    if pendingReq[id] and pendingReq[id] >= rev then return end
+    pendingReq[id] = rev
+    C_Timer.After(delay or 0, function()
+        if pendingReq[id] ~= rev then return end
+        local g = GH.Guild()
+        local cur = g and g.requests and g.requests[id]
+        if not cur or cur.rev ~= rev then pendingReq[id] = nil; return end
+        local text = table.concat({ "R", id, GH.To36(cur.rc), GH.To36(cur.n), OutName(cur.by), GH.To36(cur.at),
+            cur.st, cur.cr and OutName(cur.cr) or "", GH.To36(rev) }, "~")
+        Push(text, function() return pendingReq[id] == rev end, function() pendingReq[id] = nil end)
+    end)
+end
+
+local function OnRequest(text, sender, senderRealm)
+    local id, rc, n, by, at, st, cr, rev = text:match("^R~([^~]+)~(%w+)~(%w+)~([^~]+)~(%w+)~(%a+)~([^~]*)~(%w+)$")
+    if not id then return end
+    rev = GH.From36(rev)
+    if not rev then return end
+    if pendingReq[id] and pendingReq[id] <= rev then pendingReq[id] = nil end
+    if GH.Requests then
+        GH.Requests.Receive({
+            id = id, rc = GH.From36(rc), n = GH.From36(n), by = InName(by, senderRealm), at = GH.From36(at),
+            st = st, cr = cr ~= "" and InName(cr, senderRealm) or nil, rev = rev,
+        })
     end
 end
 
@@ -247,7 +293,8 @@ local function OnHello(text, sender, senderRealm)
         hellos[sender] = h
     end
     for nm, rev36 in body:gmatch("([^,=]+)=(%w+)") do
-        h.list[InName(nm, senderRealm)] = GH.From36(rev36) or 0
+        local key = nm:sub(1, 1) == "#" and nm or InName(nm, senderRealm)
+        h.list[key] = GH.From36(rev36) or 0
     end
     if last == "1" then
         hellos[sender] = nil
@@ -265,6 +312,8 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         OnData(text, sender, senderRealm)
     elseif kind == "H" then
         OnHello(text, sender, senderRealm)
+    elseif kind == "R" then
+        OnRequest(text, sender, senderRealm)
     end
 end)
 
