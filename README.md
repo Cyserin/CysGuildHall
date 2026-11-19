@@ -14,8 +14,17 @@ Works for any guild. Every member who runs it shares the recipes they know, so a
 - **Guild crafters on item tooltips** (`/guildhall tooltip` to turn off).
 - **Quiet sync**: hidden guild addon messages, throttled, paused in combat. Only shares professions, skill levels and recipe IDs.
 
+## Getting started
+On your first login a welcome window walks you through setup:
+1. Click **Initialize**: loads the guild roster and says hello to guildmates already running the addon, so their crafting data starts coming in.
+2. Open each of your crafting professions once. A checklist ticks them off as they are read and shared.
+3. Once every profession is read, the addon syncs with the guild and you're all set.
+
+Each of your characters gets the welcome once. `/guildhall welcome` shows it again.
+
+Everyone in the guild needs the addon for their recipes to show up. Data travels as hidden guild addon messages, so a guildmate's recipes arrive when you are both online (anyone who already has them passes them on too).
+
 ## Use
-- Open each of your profession windows once so the addon can read your recipes.
 - `/guildhall` opens the window; `/guildhall <item>` searches. Minimap button: left click Crafting, right click Requests.
 - `/guildhall gaps`, `/guildhall requests`, `/guildhall options` open those tabs.
 - `/guildhall check` shows what the addon knows; `/guildhall sync` asks the guild for newer data.
