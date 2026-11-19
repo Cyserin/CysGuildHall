@@ -157,7 +157,12 @@ end
 
 local scanToken = 0
 
-local function Finish(pid, skill, max, learned, partial)
+local function Finish(pid, skill, max, learned, partial, all)
+    -- the full list (learned or not) feeds the Gaps tab: recipes nobody in the guild knows
+    if all and not partial and #all > 0 then
+        table.sort(all)
+        GH.db.allRecipes[pid] = all
+    end
     local g = GH.Guild()
     if not g then return end
     local me = GH.Me()
@@ -199,7 +204,7 @@ function P.Scan()
     if #ids == 0 then return end
     scanToken = scanToken + 1
     local token = scanToken
-    local learned, i = {}, 1
+    local learned, all, i = {}, {}, 1
     -- time budget: a few ms a frame, so a big recipe list never stutters
     local function Step()
         if token ~= scanToken then return end
@@ -208,6 +213,7 @@ function P.Scan()
             local id = ids[i]
             i = i + 1
             local ok, info = pcall(C_TradeSkillUI.GetRecipeInfo, id)
+            if ok and info then all[#all + 1] = id end
             if ok and info and info.learned then
                 learned[#learned + 1] = id
                 local c = P.Resolve(id, true)
@@ -218,7 +224,7 @@ function P.Scan()
                 return
             end
         end
-        Finish(pid, skill, max, learned, not C_TradeSkillUI.GetAllRecipeIDs)
+        Finish(pid, skill, max, learned, not C_TradeSkillUI.GetAllRecipeIDs, all)
     end
     Step()
 end
@@ -232,3 +238,74 @@ end
 GH.On("TRADE_SKILL_SHOW", ScanSoon)
 GH.On("TRADE_SKILL_LIST_UPDATE", ScanSoon)
 GH.On("NEW_RECIPE_LEARNED", ScanSoon)
+
+--------------------------------------------------------------------------------
+-- Professions you dropped: removed from your shared entry
+--------------------------------------------------------------------------------
+-- Primary professions (the two slots). Secondary ones (Cooking, First Aid, Fishing) are never
+-- removed by themselves: the game does not always list them.
+local PRIMARY = { [164] = true, [165] = true, [171] = true, [182] = true, [186] = true, [197] = true,
+    [202] = true, [333] = true, [393] = true, [755] = true }
+P.PRIMARY = PRIMARY
+
+-- Professions listed on the Gaps tab (ones with a crafting window; gathering-only ones never show crafters)
+P.CRAFTS = { 171, 164, 185, 333, 202, 129, 165, 186, 197 }
+
+-- Skill lines the game says this character knows: set, gotPrimary (nil when the API is missing)
+function P.Learned()
+    if not GetProfessions or not GetProfessionInfo then return nil end
+    local ok, a, b, c, d, e, f = pcall(GetProfessions)
+    if not ok then return nil end
+    local set, primary = {}, false
+    for slot, idx in pairs({ a, b, c, d, e, f }) do
+        if idx then
+            local ok2, _, _, _, _, _, _, line = pcall(GetProfessionInfo, idx)
+            if ok2 and type(line) == "number" and line > 0 then
+                set[line] = true
+                -- counts only when the ID is one we store (if Forever numbered skill lines
+                -- differently, nothing is ever removed)
+                if slot <= 2 and PRIMARY[line] then primary = true end
+            end
+        end
+    end
+    return set, primary
+end
+
+-- Remove one profession from a character's entry (yours or one of your own characters)
+function P.Forget(full, pid)
+    local g = GH.Guild()
+    local m = g and g.members[full]
+    if not m or not m.profs or not m.profs[pid] then return false end
+    m.profs[pid] = nil
+    m.rev = math.max(GetServerTime(), (m.rev or 0) + 1)
+    GH.Fire("DATA", full)
+    if GH.Comm then GH.Comm.SendEntry(full) end
+    return true
+end
+
+local function PruneMine()
+    local g = GH.Guild()
+    local m = g and g.members[GH.Me()]
+    if not m or not m.profs then return end
+    local set, primary = P.Learned()
+    -- only trust the game when it lists at least one primary profession (an empty answer
+    -- can just mean the data is not loaded yet)
+    if not set or not primary then return end
+    local gone = {}
+    for pid in pairs(m.profs) do
+        if PRIMARY[pid] and not set[pid] then gone[#gone + 1] = pid end
+    end
+    for _, pid in ipairs(gone) do
+        local name = GH.ProfName(pid)
+        if P.Forget(GH.Me(), pid) then GH.Print(name .. " is no longer one of your professions: removed from the guild list.") end
+    end
+end
+
+local pruneTimer
+local function PruneSoon(delay)
+    if pruneTimer then pruneTimer:Cancel() end
+    pruneTimer = C_Timer.NewTimer(delay or 2, function() pruneTimer = nil; PruneMine() end)
+end
+GH.On("PLAYER_LOGIN", function() PruneSoon(8) end)
+GH.On("SKILL_LINES_CHANGED", function() PruneSoon(2) end)
+

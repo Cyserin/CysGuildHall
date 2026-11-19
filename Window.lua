@@ -121,6 +121,47 @@ function I.RecipeName(id)
     return (c and c.n) or ("Recipe " .. id)
 end
 
+-- Summary of one profession across the guild (nil when nobody has it)
+function I.ProfInfo(pid)
+    I.Build()
+    return profs[pid]
+end
+
+-- Recipes nobody in the guild knows, from the full recipe lists your characters read.
+-- pid = one profession (nil = all lists); q = name filter
+function I.Gaps(pid, q)
+    I.Build()
+    q = q and q:lower() or ""
+    local pids = {}
+    if pid then pids[1] = pid else for p in pairs(GH.db.allRecipes) do pids[#pids + 1] = p end end
+    local out = {}
+    for _, p in ipairs(pids) do
+        for _, id in ipairs(GH.db.allRecipes[p] or {}) do
+            if not byRecipe[id] then
+                local c = GH.Prof.Resolve(id)
+                if c and not c.p then c.p = p end
+                local name = I.RecipeName(id)
+                if q == "" or name:lower():find(q, 1, true) or (c and c.n and c.n:lower():find(q, 1, true)) then
+                    local gr, ca = I.Category(id)
+                    out[#out + 1] = { kind = "recipe", id = id, name = name, crafters = 0, online = 0, group = gr, cat = ca, gap = true }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.name ~= b.name then return a.name < b.name end
+        return a.id < b.id
+    end)
+    return out
+end
+
+function I.GapCount(pid)
+    I.Build()
+    local n = 0
+    for _, id in ipairs(GH.db.allRecipes[pid] or {}) do if not byRecipe[id] then n = n + 1 end end
+    return n
+end
+
 --------------------------------------------------------------------------------
 -- Item type of a recipe's product: group (e.g. "Weapon") + category ("One-Handed Swords")
 --------------------------------------------------------------------------------
@@ -249,7 +290,8 @@ local CRAFTER_ROWS = 5
 local REAGENT_ROWS = 7
 
 local frame
-local state = { tab = "craft", query = "", prof = nil, cat = nil, results = {}, offset = 0, selected = nil, req = nil, make = 1 }
+local state = { tab = "craft", query = "", prof = nil, cat = nil, results = {}, offset = 0, selected = nil, req = nil, make = 1,
+    gapProf = nil, prevTab = "craft", lastList = "craft" }
 
 local function ItemTip(owner, itemID)
     if not itemID then return end
@@ -295,22 +337,61 @@ local STATE_SHORT = { open = "open", claimed = "claimed", ready = "mats ready", 
 --------------------------------------------------------------------------------
 -- List (left)
 --------------------------------------------------------------------------------
-local Paint, PaintDetail, SetTab
+local Paint, PaintDetail, SetTab, PaintOptions, BuildOptions
 
 local function HintText()
     if state.tab == "requests" then return "Search requests..." end
+    if state.tab == "gaps" then return "Search recipes nobody knows..." end
+    if state.tab == "options" then return "" end
     return "Search all guild crafts..."
 end
 
 local function Rebuild()
     if not frame then return end
     local list = {}
-    if state.tab == "requests" then
+    if state.tab == "options" then
+        -- the options panel covers the list
+        PaintOptions()
+    elseif state.tab == "gaps" then
+        if state.query ~= "" then
+            for _, r in ipairs(I.Gaps(nil, state.query)) do list[#list + 1] = r end
+        elseif state.gapProf then
+            list[1] = { kind = "back" }
+            for _, r in ipairs(I.Gaps(state.gapProf)) do list[#list + 1] = r end
+        else
+            local pids, seen = {}, {}
+            for _, pid in ipairs(GH.Prof.CRAFTS) do pids[#pids + 1] = pid; seen[pid] = true end
+            for pid in pairs(GH.db.allRecipes) do if not seen[pid] then pids[#pids + 1] = pid end end
+            local open, none, wait = {}, {}, {}
+            for _, pid in ipairs(pids) do
+                local pr = I.ProfInfo(pid)
+                local name = GH.ProfName(pid)
+                if GH.db.allRecipes[pid] then
+                    local n = I.GapCount(pid)
+                    open[#open + 1] = { kind = "gapprof", pid = pid, name = name,
+                        right = n == 0 and "|cff4fd66ball known|r" or ("%d of %d"):format(n, #GH.db.allRecipes[pid]) }
+                elseif not pr then
+                    none[#none + 1] = { kind = "gapnone", pid = pid, name = name, right = "|cffff4040nobody|r" }
+                else
+                    wait[#wait + 1] = { kind = "gapwait", pid = pid, name = name,
+                        right = pr.max > 0 and ("best %d / %d"):format(pr.best, pr.max) or ("best %d"):format(pr.best) }
+                end
+            end
+            local function ByName(a, b) return a.name < b.name end
+            for _, sec in ipairs({ { "Recipes nobody knows", open }, { "No crafter in the guild", none }, { "Not checked yet", wait } }) do
+                if #sec[2] > 0 then
+                    table.sort(sec[2], ByName)
+                    list[#list + 1] = { kind = "header", name = sec[1] }
+                    for _, r in ipairs(sec[2]) do list[#list + 1] = r end
+                end
+            end
+        end
+    elseif state.tab == "requests" then
         local q = state.query:lower()
         local now = GetServerTime()
         for _, r in ipairs(GH.Requests.All()) do
             local name = I.RecipeName(r.rc)
-            local visible = r.st ~= "cancelled" and not (r.st == "done" and now - (r.rev or 0) > 86400)
+            local visible = r.st ~= "cancelled" and not (r.st == "done" and now - (r.rev or 0) > (GH.db.settings.doneHours or 24) * 3600)
             if visible and (q == "" or name:lower():find(q, 1, true) or GH.Short(r.by):lower():find(q, 1, true)) then
                 list[#list + 1] = { kind = "req", id = r.id, rc = r.rc, name = name, r = r }
             end
@@ -361,7 +442,13 @@ end
 local function ClickRow(row)
     local d = row.data
     if not d then return end
-    if d.kind == "prof" then
+    if d.kind == "gapprof" then
+        state.gapProf, state.offset = d.pid, 0
+        Rebuild()
+    elseif d.kind == "back" and state.tab == "gaps" then
+        state.gapProf, state.offset = nil, 0
+        Rebuild()
+    elseif d.kind == "prof" then
         SetFilter(d.pid, nil)
     elseif d.kind == "cat" then
         SetFilter(state.prof, { key = d.key, name = d.name })
@@ -405,7 +492,7 @@ function Paint()
             row.text:SetFont(STANDARD_TEXT_FONT, 12, "")
             local selected = (d.kind == "recipe" and d.id == state.selected and not state.req) or (d.kind == "req" and d.id == state.req)
             row.sel:SetShown(selected)
-            row:EnableMouse(d.kind ~= "header" and d.kind ~= "group")
+            row:EnableMouse(d.kind ~= "header" and d.kind ~= "group" and d.kind ~= "gapnone" and d.kind ~= "gapwait")
             if d.kind == "header" then
                 row.text:SetFont(STANDARD_TEXT_FONT, 11, "")
                 row.text:SetText(d.name:upper())
@@ -419,11 +506,21 @@ function Paint()
                 row.text:SetText(d.name)
                 row.text:SetTextColor(T.accent[1], T.accent[2], T.accent[3])
                 row.right:SetText(("%d %s, best %d"):format(d.crafters, d.crafters == 1 and "crafter" or "crafters", d.best))
+            elseif d.kind == "gapprof" or d.kind == "gapnone" or d.kind == "gapwait" then
+                row.text:SetPoint("LEFT", 14, 0)
+                row.text:SetText(d.name)
+                local col = d.kind == "gapprof" and T.accent or T.text
+                row.text:SetTextColor(col[1], col[2], col[3])
+                row.right:SetText(d.right or "")
             elseif d.kind == "cat" then
                 row.text:SetPoint("LEFT", 14, 0)
                 row.text:SetText(d.name)
                 row.text:SetTextColor(T.text[1], T.text[2], T.text[3])
                 row.right:SetText(tostring(d.count))
+            elseif d.kind == "back" and state.tab == "gaps" then
+                row.text:SetText("< All professions")
+                row.text:SetTextColor(T.accent[1], T.accent[2], T.accent[3])
+                row.right:SetText(GH.ProfName(state.gapProf))
             elseif d.kind == "back" then
                 row.text:SetText((state.cat and state.prof) and ("< " .. GH.ProfName(state.prof)) or "< All professions")
                 row.text:SetTextColor(T.accent[1], T.accent[2], T.accent[3])
@@ -441,6 +538,9 @@ function Paint()
                     if r.st == "done" then col = "4fd66b" end
                     row.right:SetText(("%s |cff%s%s|r"):format(GH.Short(r.by), col, STATE_SHORT[r.st] or r.st))
                     if not GH.Requests.IsActive(r) then row.text:SetTextColor(0.55, 0.55, 0.55) end
+                elseif d.gap then
+                    row.text:SetText(d.name)
+                    row.right:SetText(d.cat or "")
                 else
                     row.text:SetText(d.name)
                     if d.online > 0 then
@@ -471,6 +571,14 @@ function Paint()
     local g = GH.Guild()
     if not g then
         frame.empty:SetText("You are not in a guild.")
+    elseif state.tab == "options" then
+        frame.empty:SetText("")
+    elseif state.tab == "gaps" and state.query ~= "" and n == 0 then
+        frame.empty:SetText("No unknown recipes match.")
+    elseif state.tab == "gaps" and state.gapProf and n <= 1 then
+        frame.empty:SetText("Someone in the guild knows every " .. GH.ProfName(state.gapProf) .. " recipe.")
+    elseif state.tab == "gaps" then
+        frame.empty:SetText("")
     elseif n == 0 and state.tab == "requests" then
         frame.empty:SetText(state.query == "" and "No craft requests yet.\n\nPick an item on the Crafting tab and press Request." or "No requests match.")
     elseif n == 0 and state.query == "" then
@@ -508,7 +616,13 @@ function PaintDetail()
     if state.tab == "requests" and not req then id = nil end
     if not id then
         d.box:Hide()
-        d.hint:SetText(state.tab == "requests" and "Pick a request to see its reagents\nand what you can do with it." or "Search for an item, or pick a profession\nor item type, to see who can make it.")
+        local hint = "Search for an item, or pick a profession\nor item type, to see who can make it."
+        if state.tab == "requests" then
+            hint = "Pick a request to see its reagents\nand what you can do with it."
+        elseif state.tab == "gaps" then
+            hint = "Pick a profession to see the recipes\nnobody in the guild knows yet.\n\nRecipe lists come from your own characters:\nopen a profession window once to check it."
+        end
+        d.hint:SetText(hint)
         d.hint:Show()
         return
     end
@@ -542,7 +656,11 @@ function PaintDetail()
             r:Hide()
         end
     end
-    d.more:SetText(#crafters > CRAFTER_ROWS and ("+%d more"):format(#crafters - CRAFTER_ROWS) or "")
+    if #crafters == 0 then
+        d.more:SetText("Nobody in the guild knows this recipe yet.")
+    else
+        d.more:SetText(#crafters > CRAFTER_ROWS and ("+%d more"):format(#crafters - CRAFTER_ROWS) or "")
+    end
 
     -- reagents: have (bags + bank) / need
     local make = state.make
@@ -594,6 +712,11 @@ function PaintDetail()
         local acts = GH.Requests.Actions(req)
         SetButton(d.btnA, acts[1])
         SetButton(d.btnB, acts[2])
+    elseif #crafters == 0 then
+        d.actText:SetText("Nobody can make this yet.")
+        d.actText:SetTextColor(T.dim[1], T.dim[2], T.dim[3])
+        SetButton(d.btnA, nil)
+        SetButton(d.btnB, nil)
     else
         d.actText:SetText(GH.Guild() and "Ask the guild to craft this for you." or "")
         d.actText:SetTextColor(T.dim[1], T.dim[2], T.dim[3])
@@ -619,15 +742,157 @@ local function Label(parent, text)
 end
 
 function SetTab(tab)
+    -- Crafting and Gaps each keep their own pick: switching between them clears it
+    if (tab == "craft" or tab == "gaps") and tab ~= state.lastList then
+        state.selected = nil
+        state.lastList = tab
+    end
     state.tab = tab
     state.offset = 0
-    if tab == "craft" then state.req = nil end
+    if tab == "craft" or tab == "gaps" then state.req = nil end
+    frame.options:SetShown(tab == "options")
+    if tab == "options" then frame.search:ClearFocus() end
     if frame.search:GetText() ~= "" then
         frame.search:SetText("")   -- rebuilds through OnTextChanged
     else
         Rebuild()
     end
     frame.search.hint:SetText(HintText())
+end
+
+--------------------------------------------------------------------------------
+-- Options panel (covers the list + detail while the Options tab is on)
+--------------------------------------------------------------------------------
+local OPT_ROWS = 12
+local function DoneFmt(v)
+    if v >= 24 then return v == 24 and "1 day" or (v / 24 .. " days") end
+    return v == 1 and "1 hour" or (v .. " hours")
+end
+
+function BuildOptions()
+    local T = S.T()
+    local set = GH.db.settings
+    local opt = CreateFrame("Frame", nil, frame)
+    opt:SetPoint("TOPLEFT", 1, -31)
+    opt:SetPoint("BOTTOMRIGHT", -1, 1)
+    opt:SetFrameLevel(frame:GetFrameLevel() + 30)
+    opt:EnableMouse(true)
+    S.Tex(opt, "BACKGROUND", { T.bg[1], T.bg[2], T.bg[3], 1 }):SetAllPoints()
+    opt:Hide()
+    frame.options = opt
+
+    local gen = Label(opt, "General")
+    gen:SetPoint("TOPLEFT", 16, -16)
+    opt.checks = {}
+    local function AddCheck(text, get, setter)
+        local c = S.Check(opt, text, get, setter)
+        c:SetPoint("TOPLEFT", gen, "BOTTOMLEFT", 0, -10 - #opt.checks * 24)
+        opt.checks[#opt.checks + 1] = c
+        return c
+    end
+    AddCheck("Show crafter names on item tooltips", function() return set.tooltip end, function(v) set.tooltip = v end)
+    AddCheck("Craft request notes in your chat window", function() return set.notify end, function(v) set.notify = v end)
+    AddCheck("Show the minimap button", function() return not set.minimapHide end, function(v)
+        set.minimapHide = not v
+        if GH.UpdateMinimapButton then GH.UpdateMinimapButton() end
+    end)
+    opt.done = S.Stepper(opt, "Done requests stay listed", { 1, 3, 6, 12, 24, 48 },
+        function() return set.doneHours or 24 end, function(v) set.doneHours = v end, DoneFmt)
+    opt.done:SetWidth(280)
+    opt.done:SetPoint("TOPLEFT", gen, "BOTTOMLEFT", 0, -12 - #opt.checks * 24)
+    local sync = S.Button(opt, 180, 22, "Sync with the guild now")
+    sync:SetPoint("TOPLEFT", opt.done, "BOTTOMLEFT", 0, -18)
+    sync:SetScript("OnClick", function()
+        if GH.Comm then GH.Comm.Hello(true) end
+        GH.Print("asked the guild for newer crafting data.")
+    end)
+    local help = S.Text(opt, 11, SOFT)
+    help:SetPoint("TOPLEFT", sync, "BOTTOMLEFT", 0, -14)
+    help:SetWidth(300)
+    help:SetText("Escape closes this window. Type /guildhall help for the chat commands.")
+
+    local mine = Label(opt, "Your characters' professions")
+    mine:SetPoint("TOPLEFT", 356, -16)
+    local note = S.Text(opt, 11, SOFT)
+    note:SetPoint("TOPLEFT", mine, "BOTTOMLEFT", 0, -8)
+    note:SetWidth(316)
+    note:SetText("A profession you drop is removed by itself the next time that character logs in. You can also remove one here, e.g. for a character you no longer play.")
+    local field = S.Panel(opt, T.field)
+    field:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -10)
+    field:SetSize(320, OPT_ROWS * 22 + 8)
+    opt.rows = {}
+    for i = 1, OPT_ROWS do
+        local r = CreateFrame("Frame", nil, field)
+        r:SetHeight(22)
+        r:SetPoint("TOPLEFT", 6, -4 - (i - 1) * 22)
+        r:SetPoint("RIGHT", field, "RIGHT", -6, 0)
+        r.btn = S.Button(r, 64, 18, "Remove")
+        r.btn:SetPoint("RIGHT")
+        r.right = S.Text(r, 11, SOFT, "RIGHT")
+        r.right:SetPoint("RIGHT", r.btn, "LEFT", -8, 0)
+        r.text = S.Text(r, 12, T.text)
+        r.text:SetPoint("LEFT")
+        r.text:SetPoint("RIGHT", r.right, "LEFT", -6, 0)
+        r.text:SetWordWrap(false)
+        -- two clicks: "Remove" then "Sure?" (resets after 3 seconds)
+        r.btn:SetScript("OnClick", function(b)
+            if not r.data then return end
+            if b.armed then
+                b.armed = nil
+                GH.Prof.Forget(r.data.name, r.data.pid)
+                PaintOptions()
+            else
+                b.armed = true
+                b:SetLabel("|cffff4040Sure?|r")
+                C_Timer.After(3, function()
+                    if b.armed then b.armed = nil; b:SetLabel("Remove") end
+                end)
+            end
+        end)
+        opt.rows[i] = r
+    end
+    opt.empty = S.Text(field, 11, T.dim, "CENTER")
+    opt.empty:SetPoint("CENTER")
+    opt.empty:SetWidth(280)
+    opt.more = S.Text(opt, 10, T.dim)
+    opt.more:SetPoint("TOPLEFT", field, "BOTTOMLEFT", 2, -4)
+end
+
+function PaintOptions()
+    local opt = frame and frame.options
+    if not opt or not opt:IsShown() then return end
+    for _, c in ipairs(opt.checks) do c:Refresh() end
+    opt.done:Refresh()
+    local list = {}
+    local g = GH.Guild()
+    for name in pairs(GH.db.mine) do
+        local m = g and g.members[name]
+        for pid, p in pairs(m and m.profs or {}) do
+            list[#list + 1] = { name = name, pid = pid, prof = GH.ProfName(pid), s = p.s or 0, m = p.m or 0 }
+        end
+    end
+    table.sort(list, function(a, b)
+        if a.name ~= b.name then return a.name < b.name end
+        if a.prof ~= b.prof then return a.prof < b.prof end
+        return a.pid < b.pid
+    end)
+    for i = 1, OPT_ROWS do
+        local r = opt.rows[i]
+        local e = list[i]
+        r.data = e
+        r.btn.armed = nil
+        r.btn:SetLabel("Remove")
+        if e then
+            r:Show()
+            local cr, cg, cb = GH.ClassColor(e.name)
+            r.text:SetText(("|cff%02x%02x%02x%s|r  %s"):format(math.floor(cr * 255), math.floor(cg * 255), math.floor(cb * 255), GH.Short(e.name), e.prof))
+            r.right:SetText(e.m > 0 and ("%d / %d"):format(e.s, e.m) or tostring(e.s))
+        else
+            r:Hide()
+        end
+    end
+    opt.empty:SetText(#list == 0 and "No professions read yet.\nOpen each profession window once." or "")
+    opt.more:SetText(#list > OPT_ROWS and ("+%d more"):format(#list - OPT_ROWS) or "")
 end
 
 local function Build()
@@ -666,13 +931,26 @@ local function Build()
     close:SetPoint("RIGHT", -4, 0)
     close:SetScript("OnClick", function() frame:Hide() end)
     frame.tabs = {}
+    local tOpt = S.Button(header, 64, 22, "Options")
+    tOpt:SetPoint("RIGHT", close, "LEFT", -10, 0)
+    tOpt:SetScript("OnClick", function()
+        if state.tab == "options" then
+            SetTab(state.prevTab or "craft")
+        else
+            state.prevTab = state.tab
+            SetTab("options")
+        end
+    end)
+    local tGaps = S.Button(header, 56, 22, "Gaps")
+    tGaps:SetPoint("RIGHT", tOpt, "LEFT", -10, 0)
+    tGaps:SetScript("OnClick", function() SetTab("gaps") end)
     local tReq = S.Button(header, 96, 22, "Requests")
-    tReq:SetPoint("RIGHT", close, "LEFT", -12, 0)
+    tReq:SetPoint("RIGHT", tGaps, "LEFT", -4, 0)
     tReq:SetScript("OnClick", function() SetTab("requests") end)
     local tCraft = S.Button(header, 80, 22, "Crafting")
     tCraft:SetPoint("RIGHT", tReq, "LEFT", -4, 0)
     tCraft:SetScript("OnClick", function() SetTab("craft") end)
-    frame.tabs.craft, frame.tabs.requests = tCraft, tReq
+    frame.tabs.craft, frame.tabs.requests, frame.tabs.gaps, frame.tabs.options = tCraft, tReq, tGaps, tOpt
 
     -- search
     local search = S.EditBox(frame, LIST_W, 24)
@@ -848,6 +1126,8 @@ local function Build()
     d.actText:SetPoint("LEFT")
     d.actText:SetPoint("RIGHT", d.btnB, "LEFT", -8, 0)
     d.actText:SetWordWrap(false)
+
+    BuildOptions()
 
     frame:SetScript("OnShow", function()
         frame.guild:SetText(GetGuildInfo("player") or "")

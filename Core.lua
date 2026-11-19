@@ -217,7 +217,7 @@ end)
 --------------------------------------------------------------------------------
 -- Saved data
 --------------------------------------------------------------------------------
-local DEFAULTS = { tooltip = true, notify = true }
+local DEFAULTS = { tooltip = true, notify = true, doneHours = 24 }
 
 GH.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end
@@ -230,6 +230,7 @@ GH.On("ADDON_LOADED", function(name)
     db.names = db.names or {}       -- [itemID] = name (search works before item data loads)
     db.profNames = db.profNames or {} -- [profID] = name
     db.mine = db.mine or {}         -- [full] = true for characters on this account (never pruned)
+    db.allRecipes = db.allRecipes or {} -- [profID] = { every recipe ID of that profession, learned or not } (Gaps tab)
     db.guilds = db.guilds or {}     -- [guildKey] = { members = { [full] = { rev, profs = { [profID] = { s, m, r = {recipeIDs} } } } } }
     GH.db = db
     GH.Fire("LOADED")
@@ -296,6 +297,15 @@ local function Check()
         else
             print("  you: no professions read yet - open each profession window once.")
         end
+        if GH.Prof and GH.Prof.Learned then
+            local lines, primary = GH.Prof.Learned()
+            local t = {}
+            for pid in pairs(lines or {}) do t[#t + 1] = GH.ProfName(pid) .. " (" .. pid .. ")" end
+            print(("  game says you know: %s%s"):format(#t > 0 and table.concat(t, ", ") or "nothing readable", primary and "" or " (no primary read)"))
+        end
+        local lists = {}
+        for pid, l in pairs(GH.db.allRecipes) do lists[#lists + 1] = GH.ProfName(pid) .. " " .. #l end
+        print("  full recipe lists (Gaps): " .. (#lists > 0 and table.concat(lists, ", ") or "none yet"))
     end
     print(("  recipe details cached: %d"):format(Count(GH.db.recipes)))
 end
@@ -309,6 +319,10 @@ SlashCmdList.CYSGUILDHALL = function(msg)
     elseif msg == "tooltip" then
         GH.db.settings.tooltip = not GH.db.settings.tooltip
         GH.Print("crafter names on item tooltips " .. (GH.db.settings.tooltip and "on" or "off") .. ".")
+    elseif msg == "options" or msg == "settings" or msg == "config" then
+        if GH.Window then GH.Window.Open(nil, "options") end
+    elseif msg == "gaps" then
+        if GH.Window then GH.Window.Open(nil, "gaps") end
     elseif msg == "requests" then
         if GH.Window then GH.Window.Open(nil, "requests") end
     elseif msg == "minimap" then
@@ -322,7 +336,7 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     elseif msg == "help" then
-        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, minimap, check, sync, tooltip, notify.")
+        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, gaps, options, minimap, check, sync, tooltip, notify.")
     elseif msg ~= "" then
         if GH.Window then GH.Window.Open(msg) end
     else
