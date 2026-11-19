@@ -151,10 +151,19 @@ GH.Bare = Bare
 -- roster entry of a member, matched by full name, else by name alone
 GH.rosterGuid = {}   -- [GUID] = same entry
 
+-- Character IDs: our own from the game, other members' from their hidden hello
+function GH.GuidOf(full)
+    if full == GH.Me() then return UnitGUID("player") end
+    local g = GH.Guild()
+    return g and g.guids and g.guids[full]
+end
+
+-- Roster entry of a member: by name (full or bare), else by character ID
+-- (on Forever the roster's name format does not match chat names)
 function GH.RosterEntry(full)
     local e = GH.roster[full] or GH.rosterBare[Bare(full)]
-    if not e and full == GH.Me() then
-        local guid = UnitGUID("player")
+    if not e then
+        local guid = GH.GuidOf(full)
         e = guid and GH.rosterGuid[guid]
     end
     return e
@@ -264,11 +273,15 @@ local function Check()
         print(("  crafters known: %d, different recipes: %d, without details: %d"):format(crafters, recipes, unresolved))
         local re = GH.RosterEntry(GH.Me())
         print(("  you are %s; roster has you as %s"):format(GH.Me(), re and tostring(re.raw) or "NOT FOUND"))
-        if not re then
-            local n = GetNumGuildMembers() or 0
-            local sample = {}
-            for i = 1, math.min(3, n) do sample[#sample + 1] = tostring((GetGuildRosterInfo(i))) end
-            print("  roster sample: " .. table.concat(sample, ", "))
+        local n = GetNumGuildMembers() or 0
+        local sample = {}
+        for i = 1, math.min(3, n) do sample[#sample + 1] = tostring((GetGuildRosterInfo(i))) end
+        print("  roster sample: " .. table.concat(sample, ", "))
+        for name in pairs(g.members) do
+            if name ~= GH.Me() then
+                local e = GH.RosterEntry(name)
+                print(("  member %s: id %s, roster %s"):format(name, GH.GuidOf(name) and "known" or "unknown", e and (e.online and "online" or "offline") or "not matched"))
+            end
         end
         if GH.Comm and GH.Comm.lastResult ~= nil then
             print(("  last addon message: result %s (0 = sent)"):format(tostring(GH.Comm.lastResult)))

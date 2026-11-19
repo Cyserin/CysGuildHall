@@ -183,6 +183,7 @@ function C.Hello(force)
     end
     msgs[#msgs + 1] = table.concat(cur, ",")
     local id = GH.To36(helloSeq)
+    C.SendGuid(0)
     for i, body in ipairs(msgs) do
         Push("H~" .. GH.PROTO .. "~" .. id .. "~" .. (i == #msgs and "1" or "0") .. "~" .. body)
     end
@@ -192,9 +193,23 @@ function C.Hello(force)
 end
 
 -- After someone's full hello: send what they are missing (with a random wait so one member answers)
+-- Our character ID, so others can match us in the guild roster (online state, cleanup)
+local guidPending = false
+function C.SendGuid(delay)
+    if guidPending then return end
+    local guid = UnitGUID("player")
+    if not guid then return end
+    guidPending = true
+    C_Timer.After(delay or 0, function()
+        guidPending = false
+        Push("G~" .. OutName(GH.Me()) .. "~" .. guid)
+    end)
+end
+
 local function Answer(sender, theirs)
     local g = GH.Guild()
     if not g then return end
+    C.SendGuid(1 + math.random() * 4)
     local me = GH.Me()
     for name, m in pairs(g.members) do
         local rev = m.rev or 0
@@ -314,6 +329,14 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         OnHello(text, sender, senderRealm)
     elseif kind == "R" then
         OnRequest(text, sender, senderRealm)
+    elseif kind == "G" then
+        local nm, guid = text:match("^G~([^~]+)~(Player%-[%w%-]+)$")
+        local g = GH.Guild()
+        if nm and g then
+            g.guids = g.guids or {}
+            g.guids[InName(nm, senderRealm)] = guid
+            GH.Fire("DATA")
+        end
     end
 end)
 
@@ -333,13 +356,14 @@ GH.Listen("ROSTER", function()
     local g = GH.Guild()
     if not g then return end
     -- members who left the guild: only when the whole roster was read, never our own
-    -- characters, and only after being missing on 3 roster reads in a row
+    -- characters, only members we can check (name match or a known character ID),
+    -- and only after being missing on 3 roster reads in a row
     local total = GetNumGuildMembers() or 0
     if total > 0 and GH.rosterCount >= total then
         g.missing = g.missing or {}
         local gone
         for name in pairs(g.members) do
-            if GH.db.mine[name] or name == GH.Me() or GH.RosterEntry(name) then
+            if GH.db.mine[name] or name == GH.Me() or GH.RosterEntry(name) or not GH.GuidOf(name) then
                 g.missing[name] = nil
             else
                 g.missing[name] = (g.missing[name] or 0) + 1
