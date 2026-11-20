@@ -12,6 +12,8 @@ Works for any guild. Every member who runs it shares the recipes they know, so a
 - **Materials pop-up**: when a crafter claims your request you see each reagent as needed, (what you have) and what the crafter has, plus what is still short between you two (`/guildhall mats` reopens it).
 - **Gaps tab**: professions nobody in the guild has, and recipes nobody knows yet (from your own characters' recipe lists), with where to learn them: trainers and vendors you visit (Waylaid supply quartermasters included) are marked automatically, and boss / quest drops come from the Forever Dungeon Journal addon when you have it.
 - **Options**: tooltip names, chat notes, materials pop-up, guild news pop-ups, minimap button, how long done requests stay listed, and your characters' professions (dropped ones are removed by themselves at login).
+- **Mail it**: at a mailbox, the Send Mail tab shows your claimed requests whose requester asked for mail. One click fills in their name and a subject and attaches the crafted items; you press Send, and the request is marked done when it goes out.
+- **Version check**: a quiet chat note when a guildmate runs a newer Guild Hall, and who runs which version in Options (`/guildhall versions`).
 - **Guild news pop-ups**: a small note when a guildmate adds a profession or learns new recipes (click it to browse that profession).
 - **No Bind on Pickup items**: recipes that make BoP items are left out, since a guildmate can't hand them over.
 - **Guild crafters on item tooltips** (`/guildhall tooltip` to turn off).
@@ -30,7 +32,7 @@ Everyone in the guild needs the addon for their recipes to show up. Data travels
 ## Use
 - `/guildhall` opens the window; `/guildhall <item>` searches. Minimap button: left click Crafting, right click Requests.
 - `/guildhall gaps`, `/guildhall requests`, `/guildhall options` open those tabs.
-- `/guildhall check` shows what the addon knows; `/guildhall sync` asks the guild for newer data.
+- `/guildhall versions` lists who runs which version; `/guildhall check` shows what the addon knows; `/guildhall sync` asks the guild for newer data.
 
 ## Coming later
 Guild bank / bank-alt stock with have / need / missing, raid consumable targets, roster, calendar sign-ups.

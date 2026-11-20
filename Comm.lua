@@ -202,7 +202,55 @@ function C.SendGuid(delay)
     C_Timer.After(delay or 0, function()
         guidPending = false
         Push("G~" .. OutName(GH.Me()) .. "~" .. guid)
+        Push("V~" .. OutName(GH.Me()) .. "~" .. tostring(GH.version))
     end)
+end
+
+--------------------------------------------------------------------------------
+-- Versions: "V~name~0.3.12" goes out with our character ID (hello + answers).
+-- Members whose hello arrives without one run 0.3.11 or older.
+--------------------------------------------------------------------------------
+C.live = {}          -- [name] = version string, or false = older than 0.3.12 (this session)
+local toldNewer      -- newest version we already told the player about
+
+local function SeenVersion(name, ver)
+    if not name or name == GH.Me() then return end
+    C.live[name] = ver or (C.live[name] or false)
+    local g = GH.Guild()
+    if g and ver then
+        g.vers = g.vers or {}
+        g.vers[name] = { v = ver, t = GetServerTime() }
+    end
+    if ver and GH.VersionNewer(ver, GH.version) and (not toldNewer or GH.VersionNewer(ver, toldNewer)) then
+        toldNewer = ver
+        GH.Print(("a newer version is out (%s, you have %s). Update from CurseForge when you can."):format(ver, tostring(GH.version)))
+    end
+    GH.Fire("VERSIONS")
+end
+
+-- Guild Hall users and their versions: { name, v (string or nil), live, t }, newest first
+function C.Versions()
+    local out, seen = {}, {}
+    local g = GH.Guild()
+    for name, e in pairs(g and g.vers or {}) do
+        -- members who left the guild drop off (only once the roster has been read)
+        if C.live[name] ~= nil or GH.rosterCount == 0 or GH.RosterEntry(name) then
+            seen[name] = true
+            local l = C.live[name]
+            out[#out + 1] = { name = name, v = (l ~= nil and l) or e.v, live = l ~= nil, t = e.t }
+        end
+    end
+    for name, l in pairs(C.live) do
+        if not seen[name] then out[#out + 1] = { name = name, v = l or nil, live = true } end
+    end
+    table.sort(out, function(a, b)
+        if (a.v or "") ~= (b.v or "") then
+            if not a.v then return false elseif not b.v then return true end
+            return GH.VersionNewer(a.v, b.v)
+        end
+        return a.name < b.name
+    end)
+    return out
 end
 
 local function Answer(sender, theirs)
@@ -318,6 +366,7 @@ end
 local function OnHello(text, sender, senderRealm)
     local proto, id, last, body = text:match("^H~(%d+)~(%w+)~([01])~(.*)$")
     if not proto then return end
+    if C.live[sender] == nil then SeenVersion(sender, nil) end
     local h = hellos[sender]
     if not h or h.id ~= id then
         h = { id = id, list = {} }
@@ -350,6 +399,9 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         if id and GH.Requests then GH.Requests.SetDelivery(id, dl) end
     elseif kind == "S" then
         if GH.Mats then GH.Mats.Receive(text, sender) end
+    elseif kind == "V" then
+        local nm, ver = text:match("^V~([^~]+)~(%d+[%d%.]*)$")
+        if nm then SeenVersion(InName(nm, senderRealm), ver) end
     elseif kind == "G" then
         local nm, guid = text:match("^G~([^~]+)~(Player%-[%w%-]+)$")
         local g = GH.Guild()

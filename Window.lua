@@ -419,7 +419,7 @@ local STATE_SHORT = { open = "open", claimed = "claimed", ready = "mats ready", 
 --------------------------------------------------------------------------------
 -- List (left)
 --------------------------------------------------------------------------------
-local Paint, PaintDetail, SetTab, PaintOptions, BuildOptions
+local Paint, PaintDetail, SetTab, PaintOptions, BuildOptions, PaintVersions
 
 local function HintText()
     if state.tab == "requests" then return "Search requests..." end
@@ -946,6 +946,14 @@ function BuildOptions()
     help:SetWidth(300)
     help:SetText("Escape closes this window. Type /guildhall help for the chat commands.")
 
+    local vl = Label(opt, "Guild Hall versions")
+    vl:SetPoint("TOPLEFT", help, "BOTTOMLEFT", 0, -16)
+    opt.vers = S.Text(opt, 11, T.text)
+    opt.vers:SetPoint("TOPLEFT", vl, "BOTTOMLEFT", 0, -8)
+    opt.vers:SetWidth(300)
+    opt.vers:SetJustifyV("TOP")
+    opt.vers:SetSpacing(3)
+
     local mine = Label(opt, "Your characters' professions")
     mine:SetPoint("TOPLEFT", 356, -16)
     local note = S.Text(opt, 11, SOFT)
@@ -993,6 +1001,25 @@ function BuildOptions()
     opt.more:SetPoint("TOPLEFT", field, "BOTTOMLEFT", 2, -4)
 end
 
+-- Who runs which version: newer than yours green, older soft red, same parchment
+local VERS_LINES = 6
+local function Hex(c) return ("%02x%02x%02x"):format(math.floor(c[1] * 255), math.floor(c[2] * 255), math.floor(c[3] * 255)) end
+function PaintVersions(opt)
+    local lines = { "You: |cff" .. Hex(SOFT) .. tostring(GH.version) .. "|r" }
+    local list = GH.Comm and GH.Comm.Versions() or {}
+    for i = 1, math.min(#list, VERS_LINES) do
+        local e = list[i]
+        local col = { 1, 0.45, 0.4 }
+        if e.v and GH.VersionNewer(e.v, GH.version) then col = { 0.4, 0.9, 0.4 }
+        elseif e.v and not GH.VersionNewer(GH.version, e.v) then col = SOFT end
+        local cr, cg, cb = GH.ClassColor(e.name)
+        lines[#lines + 1] = ("|cff%s%s|r  |cff%s%s|r"):format(Hex({ cr, cg, cb }), GH.Short(e.name), Hex(col), e.v or "0.3.11 or older")
+    end
+    if #list > VERS_LINES then lines[#lines + 1] = ("|cff%s+%d more: /guildhall versions|r"):format(Hex(SOFT), #list - VERS_LINES)
+    elseif #list == 0 then lines[#lines + 1] = "|cff" .. Hex(SOFT) .. "No other Guild Hall users seen yet.|r" end
+    opt.vers:SetText(table.concat(lines, "\n"))
+end
+
 function PaintOptions()
     local opt = frame and frame.options
     if not opt or not opt:IsShown() then return end
@@ -1027,6 +1054,7 @@ function PaintOptions()
         end
     end
     opt.empty:SetText(#list == 0 and "No professions read yet.\nOpen each profession window once." or "")
+    PaintVersions(opt)
     opt.more:SetText(#list > OPT_ROWS and ("+%d more"):format(#list - OPT_ROWS) or "")
 end
 
@@ -1342,6 +1370,7 @@ GH.Listen("INDEX", RefreshSoon)
 GH.Listen("NAMES", RefreshSoon)
 GH.Listen("ROSTER", RefreshSoon)
 GH.Listen("REQUESTS", RefreshSoon)
+GH.Listen("VERSIONS", function() if PaintOptions then PaintOptions() end end)
 GH.On("BAG_UPDATE_DELAYED", function()
     if frame and frame:IsShown() and state.selected then PaintDetail() end
 end)

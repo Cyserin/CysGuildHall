@@ -45,6 +45,19 @@ function GH.Fire(name, ...)
     end
 end
 
+-- Is version string a newer than b? ("0.3.12" > "0.3.9")
+function GH.VersionNewer(a, b)
+    a, b = tostring(a or ""), tostring(b or "")
+    local pa, pb = {}, {}
+    for n in a:gmatch("%d+") do pa[#pa + 1] = tonumber(n) end
+    for n in b:gmatch("%d+") do pb[#pb + 1] = tonumber(n) end
+    for i = 1, math.max(#pa, #pb) do
+        local x, y = pa[i] or 0, pb[i] or 0
+        if x ~= y then return x > y end
+    end
+    return false
+end
+
 function GH.Print(msg)
     print("|cffd9a421Cys's Guild Hall|r: " .. tostring(msg))
 end
@@ -393,6 +406,13 @@ SlashCmdList.CYSGUILDHALL = function(msg)
     elseif msg == "notify" then
         GH.db.settings.notify = not GH.db.settings.notify
         GH.Print("craft request notes in your chat window " .. (GH.db.settings.notify and "on" or "off") .. ".")
+    elseif msg == "versions" or msg == "version" then
+        GH.Print("you have " .. tostring(GH.version) .. ".")
+        local list = GH.Comm and GH.Comm.Versions() or {}
+        for _, e in ipairs(list) do
+            print(("  %s: %s%s"):format(GH.Short(e.name), e.v or "0.3.11 or older", e.live and "" or " (last seen)"))
+        end
+        if #list == 0 then print("  no other Guild Hall users seen yet.") end
     elseif msg == "welcome" or msg == "setup" then
         if GH.Welcome then GH.Welcome.Show() end
     elseif msg == "mats" then
@@ -401,7 +421,7 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     elseif msg == "help" then
-        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, mats, gaps, options, welcome, minimap, check, sync, tooltip, notify.")
+        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, mats, gaps, options, versions, welcome, minimap, check, sync, tooltip, notify.")
     elseif msg ~= "" then
         if GH.Window then GH.Window.Open(msg) end
     else
