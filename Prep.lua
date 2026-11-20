@@ -8,6 +8,7 @@
 -- Shared through Comm:
 --   T~tid~item~count~by~at~state~rev~editor     one target (state a = active, x = removed)
 --   C~tid~who~item~claimed~delivered~rev        one member's claim on one part
+--   U~tid~due~rev                               due date of a target (0.3.18+; 0 = none)
 -- Targets are edited by officers only; a claim only by the member it belongs to,
 -- so two people never overwrite each other. Numbers base 36; newest revision wins.
 --------------------------------------------------------------------------------
@@ -195,6 +196,8 @@ function P.All()
     table.sort(out, function(a, b)
         local da, db = a._deliv >= a.n, b._deliv >= b.n
         if da ~= db then return db end
+        local ua, ub = (a.du or 0) > 0 and a.du or math.huge, (b.du or 0) > 0 and b.du or math.huge
+        if ua ~= ub then return ua < ub end
         if a.at ~= b.at then return a.at > b.at end
         return a.id < b.id
     end)
@@ -228,7 +231,7 @@ function P.HandInText(t)
     return who and GH.Short(who) or "?"
 end
 
-function P.New(itemID, n, to)
+function P.New(itemID, n, to, due)
     local l = Targets()
     n = Clamp(n)
     if not l or not itemID or n < 1 or not P.IAmOfficer() then return nil end
@@ -236,6 +239,7 @@ function P.New(itemID, n, to)
     local now = GetServerTime()
     local id = "p" .. GH.To36(now) .. GH.To36(GH.db.reqSeq) .. "." .. GH.Bare(GH.Me())
     local t = { id = id, it = itemID, n = n, by = GH.Me(), at = now, st = "a", rev = now, ed = GH.Me(), to = to or "s" }
+    if due and due > 0 then t.du = due end
     l[id] = t
     GH.Prof.RequestName(itemID)
     TargetChanged(t)
@@ -249,6 +253,62 @@ function P.SetCount(tid, n)
     t.n, t.ed = n, GH.Me()
     t.rev = math.max(GetServerTime(), (t.rev or 0) + 1)
     TargetChanged(t)
+end
+
+-- Officers: change where finished items go ("s", "b" or a "First-Last" name)
+function P.SetHandIn(tid, to)
+    local t = P.Get(tid)
+    if not t or t.st ~= "a" or not to or to == "" or (t.to or "s") == to or not P.IAmOfficer() then return end
+    t.to, t.ed = to, GH.Me()
+    t.rev = math.max(GetServerTime(), (t.rev or 0) + 1)
+    TargetChanged(t)
+end
+
+-- Officers: due date (end of that day, server time; 0 / nil = none)
+function P.SetDue(tid, due)
+    local t = P.Get(tid)
+    due = due and due > 0 and due or 0
+    if not t or t.st ~= "a" or (t.du or 0) == due or not P.IAmOfficer() then return end
+    t.du, t.ed = due, GH.Me()
+    t.rev = math.max(GetServerTime(), (t.rev or 0) + 1)
+    TargetChanged(t)
+end
+
+-- End of the local day `days` from today, as a timestamp
+function P.DayEnd(days)
+    local d = date("*t", time() + (days or 0) * DAY)
+    return time({ year = d.year, month = d.month, day = d.day, hour = 23, min = 59, sec = 0 })
+end
+
+-- Whole days from today to the due day (0 = today, negative = past)
+function P.DaysLeft(du)
+    local a, b = date("*t", time()), date("*t", du)
+    local ta = time({ year = a.year, month = a.month, day = a.day, hour = 12 })
+    local tb = time({ year = b.year, month = b.month, day = b.day, hour = 12 })
+    return math.floor((tb - ta) / DAY + 0.5)
+end
+
+-- "Tue, Nov 24" style day name
+function P.DayName(du)
+    return (date("%a, %b ", du) .. tonumber(date("%d", du)))
+end
+
+-- Due text for a target (nil when none): long = "due Tue, Nov 24 (in 4 days)"; color hex
+function P.DueText(t, short)
+    local du = t and t.du
+    if not du or du <= 0 then return nil end
+    local left = P.DaysLeft(du)
+    local col = left < 0 and "ff7066" or left <= 1 and "ffd100" or "ffffff"
+    local when
+    if left < 0 then when = "overdue"
+    elseif left == 0 then when = "today"
+    elseif left == 1 then when = "tomorrow"
+    else when = "in " .. left .. " days" end
+    if short then
+        if left < 2 then return when, col end
+        return (date("%b ", du) .. tonumber(date("%d", du))), col
+    end
+    return ("due %s (%s)"):format(P.DayName(du), when), col
 end
 
 function P.Remove(tid)
@@ -313,6 +373,14 @@ function P.ReceiveTarget(t, sender)
             GH.Toast.Add(("|cffffd100%s|r set a raid prep target: %dx %s."):format(GH.Short(t.by), t.n, Name(t.it)), Icon(t.it), nil, OpenPrep)
         end
     end
+end
+
+-- Due date travels right after its target, with the same revision
+function P.ReceiveDue(tid, du, rev)
+    local t = P.Get(tid)
+    if not t or (t.rev or 0) ~= rev or (t.du or 0) == du then return end
+    t.du = du
+    GH.Fire("PREP", tid)
 end
 
 function P.ReceiveClaim(tid, cl, sender)

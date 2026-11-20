@@ -915,11 +915,16 @@ function PaintDetail()
     end
     d.sub:SetText(sub)
     d.dlDrop:SetShown(canSwitch)
+    -- officers: make this item a raid prep target
+    local canPrep = not req and state.tab == "craft" and c.o and GH.Prep and GH.PrepPanel and GH.Guild() and GH.Prep.IAmOfficer() and true or false
+    d.prepBtn:SetShown(canPrep)
     d.sub:ClearAllPoints()
     d.sub:SetPoint("TOPLEFT", d.name, "BOTTOMLEFT", 0, -4)
     if canSwitch then
         d.dlDrop:Refresh()
         d.sub:SetPoint("RIGHT", d.dlDrop, "LEFT", -8, 0)
+    elseif canPrep then
+        d.sub:SetPoint("RIGHT", d.prepBtn, "LEFT", -8, 0)
     else
         d.sub:SetPoint("RIGHT", d.box, "RIGHT", -12, 0)
     end
@@ -1485,6 +1490,23 @@ local function Build()
     end)
     d.dlDrop:HookScript("OnLeave", function() GameTooltip:Hide() end)
     d.dlDrop:Hide()
+    -- officers (Crafting tab): start a raid prep target for this item
+    d.prepBtn = S.Button(inner, 84, 18, "Raid target")
+    d.prepBtn:SetPoint("TOPRIGHT", inner, "TOPRIGHT", -12, -32)
+    d.prepBtn:SetScript("OnClick", function()
+        local itemID = d.icon.itemID
+        if not itemID or not GH.PrepPanel then return end
+        SetTab("prep")
+        GH.PrepPanel.Prefill(itemID)
+    end)
+    d.prepBtn:HookScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("Make this a raid prep target", 1, 1, 1)
+        GameTooltip:AddLine("Opens Raid Prep with this item in the New target box: set how many, then Add.", 0.84, 0.77, 0.62, true)
+        GameTooltip:Show()
+    end)
+    d.prepBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    d.prepBtn:Hide()
 
     local cLabel = Label(inner, "Can make it")
     cLabel:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -12)

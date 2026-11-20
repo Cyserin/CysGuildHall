@@ -11,6 +11,14 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "0.3.18",
+        added = {
+            "Raid Prep due dates: officers can give a target a due date (optional). Targets due soonest sort first, the list shows due Nov 24, and it turns yellow the day before and red once overdue.",
+            "Officers can change the hand-in and the due date of an existing target from the dropdowns above its parts: the officer who set it, the guild bank, you, or a raider by name.",
+            "Raid target button: officers see it on an item in the Crafting tab. It opens Raid Prep with that item ready in the New target box.",
+            "Mail your raid prep: at a mailbox, the Send Mail panel also lists your claimed target items that go to a person, and gathered materials when one crafter is on that target. Mail it fills in the name, subject and items; once you press Send, your Handed in goes up by what you mailed.",
+        },
+    },
     { version = "0.3.17",
         added = {
             "Alts under their main: in Can make it, a guildmate's alt shares one line with their main, with the best skill of the two and a green dot if either is online. Hover the line to see every character.",

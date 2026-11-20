@@ -4,6 +4,8 @@
 -- requester asked "Mail it to me". One click fills in the requester's name, a subject
 -- and attaches the crafted items from your bags. You press Send yourself; when that
 -- mail goes out the request is marked done.
+-- Raid prep: your claimed target items (hand-in to a person) and gathered materials
+-- (to the one crafter on that target) show here too; sending raises your Handed in.
 --------------------------------------------------------------------------------
 local GH = CysGuildHall
 local S = GH.Style
@@ -39,6 +41,42 @@ function ML.ToMail()
             out[#out + 1] = r
         end
     end
+    return out
+end
+
+-- Raid prep parts I still have to hand in by mail: { prep, tid, item, n, to, gather }
+function ML.PrepToMail()
+    local out = {}
+    local P = GH.Prep
+    if not (GH.db and P and GH.Guild()) then return out end
+    local me = Me()
+    for _, t in ipairs(P.All()) do
+        for i, p in ipairs(P.Parts(t)) do
+            local cl = P.MyClaim(t.id, p.item)
+            local left = cl and (math.max(cl.a or 0, cl.m or 0) - (cl.d or 0)) or 0
+            if left > 0 then
+                local to
+                if i == 1 then
+                    local kind, who = P.HandIn(t)
+                    if kind == "person" then to = who end
+                else
+                    local crafters = P.ClaimsOn(t.id, t.it)
+                    if #crafters == 1 then to = crafters[1].w end
+                end
+                if to and to ~= me then
+                    out[#out + 1] = { prep = true, tid = t.id, item = p.item, n = left, to = to, gather = i > 1 }
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- Everything to mail: requests first, then raid prep
+local function AllToMail()
+    local out = {}
+    for _, r in ipairs(ML.ToMail()) do out[#out + 1] = { r = r } end
+    for _, e in ipairs(ML.PrepToMail()) do out[#out + 1] = e end
     return out
 end
 
@@ -111,6 +149,27 @@ local function MailIt(r)
     end
 end
 
+local function MailPrep(e)
+    if not (SendMailFrame and SendMailFrame:IsShown()) then return end
+    if GetCursorInfo() then GH.Print("put down what is on your cursor first."); return end
+    local name = GH.Prof.ItemName(e.item) or ("Item " .. e.item)
+    local to = GH.Short(e.to)
+    SendMailNameEditBox:SetText(to)
+    local subject = ("Raid prep: %dx %s"):format(e.n, name)
+    SendMailSubjectEditBox:SetText(subject)
+    local short = Attach(e.item, e.n)
+    C_Timer.After(0.3, function()
+        local s = SendMailSubjectEditBox:GetText()
+        if s == "" or s == name then SendMailSubjectEditBox:SetText(subject) end
+    end)
+    pending = { prep = e, item = e.item, att = e.n - short, to = to, t = GetTime() }
+    if short > 0 then
+        GH.Print(("attached what you carry; %d more %s still to hand in (or no free attachment slot)."):format(short, name))
+    else
+        GH.Print(("ready to send to %s - check it, then press Send. Your Handed in goes up once it goes out."):format(to))
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Panel beside the mail window (only on the Send Mail tab, only with requests to mail)
 --------------------------------------------------------------------------------
@@ -132,7 +191,11 @@ local function Build()
         row:SetPoint("RIGHT", panel, "RIGHT", -8, 0)
         row.btn = S.Button(row, 64, 22, "Mail it")
         row.btn:SetPoint("RIGHT")
-        row.btn:SetScript("OnClick", function() if row.r then MailIt(row.r) end end)
+        row.btn:SetScript("OnClick", function()
+            local e = row.e
+            if not e then return end
+            if e.r then MailIt(e.r) else MailPrep(e) end
+        end)
         row.name = S.Text(row, 12, T.text)
         row.name:SetPoint("TOPLEFT", 0, -4)
         row.name:SetPoint("RIGHT", row.btn, "LEFT", -6, 0)
@@ -152,19 +215,27 @@ end
 function ML.Paint()
     if not (MailFrame and SendMailFrame) then return end
     if not panel then Build() end
-    local list = ML.ToMail()
+    local list = AllToMail()
     if #list == 0 or not SendMailFrame:IsShown() then panel:Hide(); return end
     local T = S.T()
     for i = 1, ROWS do
-        local row, r = panel.rows[i], list[i]
-        row.r = r
-        if r then
+        local row, e = panel.rows[i], list[i]
+        row.e = e
+        if e and e.r then
+            local r = e.r
             local itemID, n = Product(r)
             local have = Carried(itemID)
             local name = GH.Index and GH.Index.RecipeName(r.rc) or GH.Prof.ItemName(itemID) or ("Item " .. itemID)
             row.name:SetText(("%dx %s"):format(n, name))
             local col = have >= n and "4fd66b" or "ff7066"
             row.sub:SetText(("to %s - |cff%shave %d|r"):format(GH.Short(r.by), col, have))
+            row.btn:SetActive(have > 0)
+            row:Show()
+        elseif e then
+            local have = Carried(e.item)
+            row.name:SetText(("%dx %s"):format(e.n, GH.Prof.ItemName(e.item) or ("Item " .. e.item)))
+            local col = have >= e.n and "4fd66b" or "ff7066"
+            row.sub:SetText(("%s to %s - |cff%shave %d|r"):format(e.gather and "Raid prep mats" or "Raid prep", GH.Short(e.to), col, have))
             row.btn:SetActive(have > 0)
             row:Show()
         else
@@ -187,19 +258,41 @@ GH.On("MAIL_SHOW", function()
         if n > 0 then
             GH.Print(("%d guild %s to mail - open the Send Mail tab."):format(n, n == 1 and "request" or "requests"))
         end
+        local p = #ML.PrepToMail()
+        if p > 0 then
+            GH.Print(("%d raid prep %s to hand in by mail - open the Send Mail tab."):format(p, p == 1 and "part" or "parts"))
+        end
         ML.Paint()
     end)
 end)
 GH.On("BAG_UPDATE_DELAYED", function() if panel and panel:IsShown() then ML.Paint() end end)
 GH.Listen("REQUESTS", function() if panel and SendMailFrame and SendMailFrame:IsShown() then ML.Paint() end end)
+GH.Listen("PREP", function() if panel and SendMailFrame and SendMailFrame:IsShown() then ML.Paint() end end)
 
-hooksecurefunc("SendMail", function(to) lastTo = to end)
+hooksecurefunc("SendMail", function(to)
+    lastTo = to
+    -- raid prep: count what actually went into the mail
+    if pending and pending.item then
+        local n = Attached(pending.item)
+        if n > 0 then pending.att = n end
+    end
+end)
 
 GH.On("MAIL_SEND_SUCCESS", function()
     local p = pending
     pending = nil
     if not p or GetTime() - p.t > 600 or not lastTo then return end
     if lastTo:lower():gsub("%s+$", "") ~= p.to:lower() then return end
+    if p.prep then
+        local e = p.prep
+        local cl = GH.Prep and GH.Prep.MyClaim(e.tid, e.item)
+        local sent = p.att or 0
+        if cl and sent > 0 then
+            GH.Prep.SetMine(e.tid, e.item, nil, (cl.d or 0) + sent)
+            GH.Print(("mailed %d to %s - raid prep Handed in updated."):format(sent, p.to))
+        end
+        return
+    end
     local r = GH.Requests.Get(p.id)
     if r and GH.Requests.IsActive(r) and r.cr == Me() then
         GH.Requests.Set(p.id, "done")

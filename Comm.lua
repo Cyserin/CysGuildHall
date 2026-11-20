@@ -333,7 +333,8 @@ end
 --------------------------------------------------------------------------------
 -- Raid prep (0.3.16+): "T~tid~item~count~by~at~state~rev~editor~handin" and
 -- "C~tid~who~item~claimed~delivered~rev~made" (numbers base 36; hand-in b = guild bank,
--- s = the officer who set it, else a name; the last field of each may be missing)
+-- s = the officer who set it, else a name; the last field of each may be missing).
+-- 0.3.18+: "U~tid~due~rev" follows a target that has a due date (older versions ignore U).
 --------------------------------------------------------------------------------
 local pendingT = {}   -- [tid] = rev waiting to be sent
 local pendingC = {}   -- [tid^who^item] = rev waiting to be sent
@@ -350,7 +351,13 @@ function C.SendTarget(t, delay)
         local text = table.concat({ "T", id, GH.To36(cur.it), GH.To36(cur.n), OutName(cur.by), GH.To36(cur.at),
             cur.st, GH.To36(rev), OutName(cur.ed or cur.by),
             (cur.to == "b" or cur.to == "s" or not cur.to) and (cur.to or "s") or OutName(cur.to) }, "~")
-        Push(text, function() return pendingT[id] == rev end, function() pendingT[id] = nil end)
+        if cur.du then
+            Push(text, function() return pendingT[id] == rev end)
+            Push(table.concat({ "U", id, GH.To36(cur.du), GH.To36(rev) }, "~"),
+                function() return pendingT[id] == rev end, function() pendingT[id] = nil end)
+        else
+            Push(text, function() return pendingT[id] == rev end, function() pendingT[id] = nil end)
+        end
     end)
 end
 
@@ -377,6 +384,13 @@ local function OnTarget(text, sender, senderRealm)
         id = id, it = GH.From36(it), n = GH.From36(n), by = InName(by, senderRealm), at = GH.From36(at),
         st = st, rev = rev, ed = InName(ed, senderRealm), to = to,
     }, sender)
+end
+
+local function OnDue(text)
+    local id, du, rev = text:match("^U~([^~]+)~(%w+)~(%w+)$")
+    du, rev = du and GH.From36(du), rev and GH.From36(rev)
+    if not rev or not du or not GH.Prep or not GH.Prep.ReceiveDue then return end
+    GH.Prep.ReceiveDue(id, du, rev)
 end
 
 local function OnClaim(text, sender, senderRealm)
@@ -642,6 +656,8 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         OnTarget(text, sender, senderRealm)
     elseif kind == "C" then
         OnClaim(text, sender, senderRealm)
+    elseif kind == "U" then
+        OnDue(text)
     elseif kind == "Q" then
         local id, dl = text:match("^Q~([^~]+)~(%a)$")
         if id and GH.Requests then GH.Requests.SetDelivery(id, dl) end

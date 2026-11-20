@@ -10,12 +10,12 @@ local UI = {}
 GH.PrepPanel = UI
 
 local SOFT = { 0.84, 0.77, 0.62, 1 }
-local LIST_ROWS, LIST_H = 12, 26
+local LIST_ROWS, LIST_H = 11, 26
 local PART_ROWS, PART_H = 7, 22
 local WHO_ROWS, WHO_H = 4, 18
 
 local panel
-local state = { sel = nil, focus = nil, offset = 0 }
+local state = { sel = nil, focus = nil, offset = 0, due = 0 }
 
 local function Hex(r, g, b) return ("%02x%02x%02x"):format(math.floor(r * 255), math.floor(g * 255), math.floor(b * 255)) end
 
@@ -83,6 +83,32 @@ local function NumBox(parent, w, commit)
     return e
 end
 
+-- "First Last" typed by an officer -> stored "First-Last" (nil when empty)
+local function ParseName(text)
+    local name = (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then return nil end
+    if not name:find("-", 1, true) then
+        local first, last = name:match("^(%S+)%s+(%S+)$")
+        name = first and (first .. "-" .. last) or GH.Canon(name)
+    end
+    return name
+end
+
+-- Due date choices: none, then the next 14 days (plus the current one when it is older or later)
+local function DueItems(cur)
+    local P = GH.Prep
+    local items = { { 0, "No due date" } }
+    local found = not cur or cur <= 0
+    for i = 0, 13 do
+        local v = P.DayEnd(i)
+        local label = i == 0 and "Today" or i == 1 and "Tomorrow" or P.DayName(v)
+        items[#items + 1] = { v, "Due " .. (i < 2 and label:lower() or label) }
+        if v == cur then found = true end
+    end
+    if not found then table.insert(items, 2, { cur, "Due " .. P.DayName(cur) }) end
+    return items
+end
+
 --------------------------------------------------------------------------------
 -- Adding a target: shift-click an item into the box, or type its name
 --------------------------------------------------------------------------------
@@ -114,22 +140,30 @@ local function AddTarget()
     if n < 1 then GH.Print("set how many the guild needs.") return end
     local to = GH.db.settings.prepTo or "s"
     if to == "r" then
-        local name = (panel.toName:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        if name == "" then GH.Print("type the raider's name (First Last) for the hand-in.") return end
-        if not name:find("-", 1, true) then
-            local first, last = name:match("^(%S+)%s+(%S+)$")
-            name = first and (first .. "-" .. last) or GH.Canon(name)
-        end
+        local name = ParseName(panel.toName:GetText())
+        if not name then GH.Print("type the raider's name (First Last) for the hand-in.") return end
         to = name
     end
-    local t = GH.Prep.New(id, n, to)
+    local t = GH.Prep.New(id, n, to, state.due)
     if t then
+        state.due = 0
+        panel.dueDrop:Refresh()
         panel.itemBox:SetText("")
         panel.itemBox.linkID, panel.itemBox.linkName = nil, nil
         panel.itemBox:ClearFocus()
         state.sel, state.focus, state.offset = t.id, t.it, 0
         UI.Paint()
     end
+end
+
+-- From the Crafting tab (officers): put an item in the New target box
+function UI.Prefill(itemID)
+    if not panel or not itemID then return end
+    local name = GH.Prof.ItemName(itemID) or (C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)) or ("Item " .. itemID)
+    panel.itemBox:SetText(name)
+    panel.itemBox.linkID, panel.itemBox.linkName = itemID, name
+    panel.countBox:SetFocus()
+    panel.countBox:HighlightText()
 end
 
 if ChatEdit_InsertLink then
@@ -165,7 +199,12 @@ local function PaintList(list)
             else
                 row.right:SetText(("%d / %d"):format(t._made, t.n))
             end
-            row.sub:SetText(t._claimed > t._made and (t._claimed .. " claimed") or "")
+            local due, col = GH.Prep.DueText(t, true)
+            if due and not done then
+                row.sub:SetText("|cff" .. col .. (due == "overdue" and "overdue" or ("due " .. due)) .. "|r")
+            else
+                row.sub:SetText(t._claimed > t._made and (t._claimed .. " claimed") or "")
+            end
             row.sel:SetShown(t.id == state.sel)
         else
             row:Hide()
@@ -219,7 +258,14 @@ local function PaintDetail(t)
         local verb = main.kind == "craft" and "made" or "brought"
         d.progress:SetText(("%d %s" .. dash .. "%d handed in" .. dash .. "%d claimed" .. dash .. "%d needed"):format(main.made, verb, main.deliv, main.claimed, t.n))
     end
-    d.handIn:SetText("Hand in: |cffffffff" .. GH.Prep.HandInText(t) .. "|r")
+    local due, dcol = GH.Prep.DueText(t, true)
+    local dueText = due and ("|cff" .. dcol .. (due == "overdue" and "Overdue" or ("Due " .. due)) .. "|r" .. dash) or ""
+    d.handIn:SetText(dueText .. "Hand in: |cffffffff" .. GH.Prep.HandInText(t) .. "|r")
+    d.handIn:SetShown(not officer)
+    if d.toName.tid and d.toName.tid ~= t.id then d.toName:Hide() end
+    d.toDrop:SetShown(officer)
+    d.dueDrop:SetShown(officer and not d.toName:IsShown())
+    if officer then d.toDrop:Refresh(); d.dueDrop:Refresh() end
 
     -- parts
     for i = 1, PART_ROWS do
@@ -244,7 +290,7 @@ local function PaintDetail(t)
             row:Hide()
         end
     end
-    d.partsMore:SetText(#parts > PART_ROWS and ("+%d more materials"):format(#parts - PART_ROWS) or "")
+    d.partsMore:SetText((#parts > PART_ROWS and not d.toName:IsShown()) and ("+%d more"):format(#parts - PART_ROWS) or "")
     d.partsNote:SetText(#parts == 1 and (main.kind == "craft" and "" or "Nobody in the guild has a recipe for this, so it is brought in as is.") or "")
 
     -- who is on the picked part
@@ -418,7 +464,7 @@ function UI.Build(frame)
     -- new target (officers)
     local add = CreateFrame("Frame", nil, panel)
     add:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, -10)
-    add:SetSize(300, 70)
+    add:SetSize(300, 96)
     panel.addBox = add
     local al = Label(add, "New target")
     al:SetPoint("TOPLEFT", 2, 0)
@@ -472,6 +518,21 @@ function UI.Build(frame)
         GameTooltip:Show()
     end)
     to:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    local dl = S.Text(add, 11, SOFT)
+    dl:SetPoint("TOPLEFT", tl, "BOTTOMLEFT", 0, -14)
+    dl:SetText("Due")
+    local due = S.Dropdown(add, 110, 20, function() return DueItems() end,
+        function() return state.due end, function(v) state.due = v end)
+    due:SetPoint("LEFT", to, "LEFT", 0, 0)
+    due:SetPoint("TOP", dl, "TOP", 0, 4)
+    due:HookScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("When the guild needs it by", 1, 1, 1)
+        GameTooltip:AddLine("Targets due soonest sort first. Optional.", 0.84, 0.77, 0.62, true)
+        GameTooltip:Show()
+    end)
+    due:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    panel.dueDrop = due
     panel.notOfficer = S.Text(panel, 11, SOFT)
     panel.notOfficer:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 2, -12)
     panel.notOfficer:SetWidth(296)
@@ -552,8 +613,78 @@ function UI.Build(frame)
     d.partsMore:SetPoint("LEFT", pl, "RIGHT", 8, 0)
     d.handIn = S.Text(body, 11, SOFT, "RIGHT")
     d.handIn:SetPoint("TOPRIGHT", -10, -87)
-    d.handIn:SetWidth(220)
+    d.handIn:SetWidth(270)
     d.handIn:SetWordWrap(false)
+    -- officers: hand-in and due date can be changed on an existing target
+    local function Cur() return state.sel and GH.Prep.Get(state.sel) end
+    d.toDrop = S.Dropdown(body, 124, 18, function()
+        local t = Cur()
+        if not t then return {} end
+        local me = GH.Me()
+        local items = { { "s", "To " .. GH.Short(t.by) }, { "b", "To guild bank" } }
+        if t.by ~= me then items[#items + 1] = { me, "To me" } end
+        local to = t.to or "s"
+        if to ~= "s" and to ~= "b" and to ~= me then items[#items + 1] = { to, "To " .. GH.Short(to) } end
+        items[#items + 1] = { "r", "To a raider..." }
+        return items
+    end, function()
+        local t = Cur()
+        return t and (t.to or "s") or "s"
+    end, function(v)
+        if not state.sel then return end
+        if v == "r" then
+            d.toName.tid = state.sel
+            d.toName:SetText("")
+            d.toName:Show()
+            d.toName:SetFocus()
+            UI.Paint()
+        else
+            d.toName:Hide()
+            GH.Prep.SetHandIn(state.sel, v)
+            UI.Paint()
+        end
+    end)
+    d.toDrop:SetPoint("TOPRIGHT", -10, -84)
+    d.toDrop:HookScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("Where finished items go", 1, 1, 1)
+        GameTooltip:AddLine("Changing it updates the target for the whole guild.", 0.84, 0.77, 0.62, true)
+        GameTooltip:Show()
+    end)
+    d.toDrop:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    d.dueDrop = S.Dropdown(body, 108, 18, function()
+        local t = Cur()
+        return DueItems(t and t.du)
+    end, function()
+        local t = Cur()
+        return t and (t.du or 0) or 0
+    end, function(v)
+        if state.sel then GH.Prep.SetDue(state.sel, v) end
+        UI.Paint()
+    end)
+    d.dueDrop:SetPoint("RIGHT", d.toDrop, "LEFT", -4, 0)
+    d.dueDrop:HookScript("OnEnter", function(s)
+        local t = Cur()
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("Due date", 1, 1, 1)
+        local long = t and GH.Prep.DueText(t)
+        GameTooltip:AddLine(long and (long:sub(1, 1):upper() .. long:sub(2)) or "No due date set.", 0.84, 0.77, 0.62, true)
+        GameTooltip:Show()
+    end)
+    d.dueDrop:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    d.toName = S.EditBox(body, 108, 18)
+    d.toName:SetPoint("RIGHT", d.toDrop, "LEFT", -4, 0)
+    d.toName.hint:SetText("First Last, Enter")
+    d.toName:SetScript("OnTextChanged", function(e) e.hint:SetShown(e:GetText() == "") end)
+    d.toName:SetScript("OnEnterPressed", function(e)
+        local name = ParseName(e:GetText())
+        e:ClearFocus()
+        e:Hide()
+        if name and e.tid then GH.Prep.SetHandIn(e.tid, name) end
+        UI.Paint()
+    end)
+    d.toName:SetScript("OnEscapePressed", function(e) e:ClearFocus(); e:Hide(); UI.Paint() end)
+    d.toName:Hide()
     d.parts = {}
     for i = 1, PART_ROWS do
         local row = ListRow(body, PART_H)

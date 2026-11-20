@@ -2,6 +2,13 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 0.3.18
+- **Raid Prep due dates**: officers can set an optional due date when adding a target or on an existing one. Targets due soonest sort first; the list shows "due Nov 24", yellow the day before, red once overdue.
+- Officers can **change the hand-in and due date** of an existing target (dropdowns on the Parts row): the officer who set it, the guild bank, themselves or a named raider.
+- **Raid target** button on the Crafting tab item detail (officers): opens Raid Prep with that item in the New target box.
+- **Mail your raid prep**: the Send Mail panel also lists your claimed target items that go to a person, and gathered materials when a single crafter is on that target. Mail it fills in the name, subject and items; after you press Send, your Handed in goes up by what you mailed.
+- Due dates sync with a new message that older versions ignore: they still see the targets, just without the date.
+
 ## 0.3.17
 - **Alts under their main**: in Can make it, a guildmate's alt shares one line with their main ("Main Name + Alt Name"), with the best skill of the two and online if either is. Hover the line for every character, its skill and online state. An alt whose main can't make the item shows "alt of Main Name".
 - Alts come from the guild roster: a member with an Alt rank (any rank named Alt / Alts, or one rank picked on the Options tab) whose public or officer note names another member. Options switch "Group alts under their main".
