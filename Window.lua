@@ -172,7 +172,7 @@ function I.ProfInfo(pid)
     return profs[pid]
 end
 
--- Recipes nobody in the guild knows, from the full recipe lists your characters read.
+-- Recipes nobody in the guild knows, from the full recipe lists the guild shares.
 -- pid = one profession (nil = all lists); q = name filter
 -- Short kind of a recipe source text: "Drop", "Vendor", "Quest"... (nil when unknown)
 function I.SourceKind(src)
@@ -773,7 +773,15 @@ function PaintDetail()
             d.src:SetText(table.concat(lines, "\n"))
             d.src:SetTextColor(T.text[1], T.text[2], T.text[3])
         elseif c.src == nil then
-            d.src:SetText("Not read yet: open your " .. (pid and GH.ProfName(pid) or "profession") .. " window once more.")
+            -- ask guildmates who read it; nobody answering means nobody has read it yet
+            local at = GH.Comm and GH.Comm.AskSource(id)
+            if at and GetTime() - at < 15 then
+                d.src:SetText("Asking the guild where to learn it...")
+                C_Timer.After(15.5 - (GetTime() - at), function() GH.Fire("DATA") end)
+            else
+                d.src:SetText("Not read yet: anyone with " .. (pid and GH.ProfName(pid) or "this profession")
+                    .. " fills this in by opening their profession window once.")
+            end
             d.src:SetTextColor(SOFT[1], SOFT[2], SOFT[3])
         elseif c.src == "" then
             d.src:SetText("The game gives no source for this recipe (most likely a trainer: visit one and it gets marked).")
@@ -941,6 +949,9 @@ function BuildOptions()
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     end)
+    local news = S.Button(opt, 110, 22, "What's new")
+    news:SetPoint("LEFT", sync, "RIGHT", 8, 0)
+    news:SetScript("OnClick", function() if GH.WhatsNew then GH.WhatsNew.Show() end end)
     local help = S.Text(opt, 11, SOFT)
     help:SetPoint("TOPLEFT", sync, "BOTTOMLEFT", 0, -14)
     help:SetWidth(300)

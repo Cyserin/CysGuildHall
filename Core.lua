@@ -301,6 +301,8 @@ GH.On("ADDON_LOADED", function(name)
     db.mine = db.mine or {}         -- [full] = true for characters on this account (never pruned)
     db.init = db.init or {}         -- [full] = 1 initialized / 2 set up (first-run welcome)
     db.allRecipes = db.allRecipes or {} -- [profID] = { every recipe ID of that profession, learned or not } (Gaps tab)
+    db.allRev = db.allRev or {}     -- [profID] = revision of that full list (shared with the guild)
+    for pid in pairs(db.allRecipes) do db.allRev[pid] = db.allRev[pid] or GetServerTime() end
     db.guilds = db.guilds or {}     -- [guildKey] = { members = { [full] = { rev, profs = { [profID] = { s, m, r = {recipeIDs} } } } } }
     GH.db = db
     GH.Fire("LOADED")
@@ -374,7 +376,7 @@ local function Check()
             print(("  game says you know: %s%s"):format(#t > 0 and table.concat(t, ", ") or "nothing readable", primary and "" or " (no primary read)"))
         end
         local lists = {}
-        for pid, l in pairs(GH.db.allRecipes) do lists[#lists + 1] = GH.ProfName(pid) .. " " .. #l end
+        for pid, l in pairs(GH.db.allRecipes) do lists[#lists + 1] = GH.ProfName(pid) .. " " .. #l .. (GH.db.allRev[pid] and "" or " (unshared)") end
         print("  full recipe lists (Gaps): " .. (#lists > 0 and table.concat(lists, ", ") or "none yet"))
     end
     local marked = 0
@@ -413,6 +415,8 @@ SlashCmdList.CYSGUILDHALL = function(msg)
             print(("  %s: %s%s"):format(GH.Short(e.name), e.v or "0.3.11 or older", e.live and "" or " (last seen)"))
         end
         if #list == 0 then print("  no other Guild Hall users seen yet.") end
+    elseif msg == "news" or msg == "new" or msg == "changes" then
+        if GH.WhatsNew then GH.WhatsNew.Show() end
     elseif msg == "welcome" or msg == "setup" then
         if GH.Welcome then GH.Welcome.Show() end
     elseif msg == "mats" then
@@ -421,7 +425,7 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     elseif msg == "help" then
-        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, mats, gaps, options, versions, welcome, minimap, check, sync, tooltip, notify.")
+        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, mats, gaps, options, versions, news, welcome, minimap, check, sync, tooltip, notify.")
     elseif msg ~= "" then
         if GH.Window then GH.Window.Open(msg) end
     else

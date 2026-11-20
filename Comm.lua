@@ -5,6 +5,8 @@
 -- with a revision number (server time of the last change).
 --   H  hello: "here are the entries I have and their revisions" (sent once after login)
 --   D  data:  one entry, cut in pieces of ~200 characters
+--   L  list:  one profession's full recipe list (Gaps), cut the same way (0.3.13+)
+--   W / X     "where is recipe N learned?" and the answer (source text + trainers / vendors)
 -- Whoever hears a hello and holds a newer entry sends it after a short random wait;
 -- if someone else starts sending the same entry first, the others stand down.
 -- Sends are throttled and wait while you are in combat.
@@ -169,6 +171,11 @@ function C.Hello(force)
     for id, r in pairs(g.requests or {}) do
         items[#items + 1] = "#" .. id .. "=" .. GH.To36(r.rev or 0)
     end
+    -- full recipe lists (Gaps); "@=1" tells others we understand lists (older versions skip it)
+    items[#items + 1] = "@=1"
+    for pid, rev in pairs(GH.db.allRev) do
+        if GH.db.allRecipes[pid] then items[#items + 1] = "@" .. GH.To36(pid) .. "=" .. GH.To36(rev) end
+    end
     table.sort(items)
     local msgs, cur = {}, {}
     local len = 0
@@ -270,6 +277,12 @@ local function Answer(sender, theirs)
             C.SendRequest(r, (r.by == me) and (0.5 + math.random() * 2) or (4 + math.random() * 12))
         end
     end
+    -- full recipe lists, only to members who understand them
+    if theirs["@"] then
+        for pid, rev in pairs(GH.db.allRev) do
+            if GH.db.allRecipes[pid] and (theirs["@" .. GH.To36(pid)] or 0) < rev then C.SendList(pid, 6 + math.random() * 14) end
+        end
+    end
     -- my reagent counts for requests I claimed (after the requests themselves)
     if GH.Mats then C_Timer.After(5 + math.random() * 3, GH.Mats.Resend) end
 end
@@ -309,6 +322,153 @@ local function OnRequest(text, sender, senderRealm)
             st = st, cr = cr ~= "" and InName(cr, senderRealm) or nil, rev = rev,
         })
     end
+end
+
+--------------------------------------------------------------------------------
+-- Full recipe lists (Gaps tab): "L~pid~rev~i~n~id.id.id" (base 36). Lists only grow:
+-- what arrives is merged; if we had recipes the sender lacked, ours goes out again.
+--------------------------------------------------------------------------------
+local pendingList = {}   -- [pid] = { rev, started }
+local incomingList = {}  -- [pid#rev] = { n, got, parts, t }
+
+function C.SendList(pid, delay)
+    local rev = GH.db.allRev[pid]
+    if not rev or not GH.db.allRecipes[pid] then return end
+    local p = pendingList[pid]
+    if p and p.rev >= rev then return end
+    local pend = { rev = rev }
+    pendingList[pid] = pend
+    C_Timer.After(delay or 0, function()
+        if pendingList[pid] ~= pend then return end
+        if GH.db.allRev[pid] ~= rev then pendingList[pid] = nil; return end
+        local r = {}
+        for i, id in ipairs(GH.db.allRecipes[pid]) do r[i] = GH.To36(id) end
+        local body = table.concat(r, ".")
+        local n = math.max(1, math.ceil(#body / CHUNK))
+        if n > 60 then pendingList[pid] = nil; return end
+        local head = "L~" .. GH.To36(pid) .. "~" .. GH.To36(rev) .. "~"
+        local function Live() return pendingList[pid] == pend end
+        for i = 1, n do
+            Push(head .. i .. "~" .. n .. "~" .. body:sub((i - 1) * CHUNK + 1, i * CHUNK), Live,
+                i == n and function() pendingList[pid] = nil end or nil,
+                i == 1 and function() pend.started = true end or nil)
+        end
+    end)
+end
+
+local function OnList(text)
+    local pid36, rev36, i, n, piece = text:match("^L~(%w+)~(%w+)~(%d+)~(%d+)~(.*)$")
+    if not pid36 then return end
+    local pid, rev = GH.From36(pid36), GH.From36(rev36)
+    i, n = tonumber(i), tonumber(n)
+    if not pid or not rev or n < 1 or n > 60 or i < 1 or i > n then return end
+    -- someone else is sending this list (same or newer): stand down unless we already started
+    local p = pendingList[pid]
+    if p and not p.started and p.rev <= rev then pendingList[pid] = nil end
+    local mine = GH.db.allRev[pid]
+    if mine and mine >= rev then return end
+    local key = pid .. "#" .. rev
+    local a = incomingList[key]
+    if not a then
+        a = { n = n, got = 0, parts = {}, t = GetTime() }
+        incomingList[key] = a
+    end
+    if a.n ~= n then return end
+    if not a.parts[i] then a.parts[i] = piece; a.got = a.got + 1 end
+    if a.got < a.n then return end
+    incomingList[key] = nil
+    local ids = {}
+    for id in table.concat(a.parts):gmatch("[^%.]+") do
+        local v = GH.From36(id)
+        if v then ids[#ids + 1] = v end
+    end
+    if #ids == 0 then return end
+    local _, _, extra = GH.Prof.MergeList(pid, ids)
+    if extra then
+        -- we know recipes the sender did not: ours (the bigger list) goes out
+        GH.db.allRev[pid] = math.max(rev, mine or 0) + 1
+        C.SendList(pid, 4 + math.random() * 8)
+    else
+        GH.db.allRev[pid] = rev
+    end
+    GH.Fire("DATA")
+end
+
+--------------------------------------------------------------------------------
+-- Where a recipe nobody knows is learned: the game only tells a player who has that
+-- profession window open, so the viewer asks ("W~recipe") and a guildmate who read it
+-- answers "X~recipe~i~n~marks~source" (marks = kind;name;place;skill joined by ^).
+--------------------------------------------------------------------------------
+local asked = {}        -- [recipeID] = GetTime() we asked (once a session)
+local answering = {}    -- [recipeID] = true while our answer waits
+local incomingSrc = {}  -- [recipeID] = { n, got, parts, t }
+
+function C.AskSource(id)
+    if not id or asked[id] or not IsInGuild() then return asked[id] end
+    asked[id] = GetTime()
+    Push("W~" .. GH.To36(id))
+    return asked[id]
+end
+
+local function Clean(s) return (tostring(s or ""):gsub("[~;%^]", " ")) end
+
+local function Answerable(c)
+    return c and (c.src ~= nil or (c.t and c.t[1] ~= nil))
+end
+
+local function OnAsk(text)
+    local id = GH.From36(text:match("^W~(%w+)$") or "")
+    if not id or answering[id] then return end
+    local c = GH.db.recipes[id]
+    if not Answerable(c) then return end
+    answering[id] = true
+    C_Timer.After(1 + math.random() * 5, function()
+        if not answering[id] then return end   -- someone answered first
+        answering[id] = nil
+        local marks = {}
+        for _, t in ipairs(c.t or {}) do
+            marks[#marks + 1] = table.concat({ Clean(t.k), Clean(t.n), Clean(t.z), t.s and tostring(t.s) or "" }, ";")
+        end
+        local src = type(c.src) == "string" and c.src:gsub("\r?\n", "|n") or ""
+        local body = table.concat(marks, "^") .. "~" .. (c.src == nil and "?" or "=" .. src)
+        local n = math.max(1, math.ceil(#body / CHUNK))
+        if n > 8 then return end
+        local head = "X~" .. GH.To36(id) .. "~"
+        for i = 1, n do Push(head .. i .. "~" .. n .. "~" .. body:sub((i - 1) * CHUNK + 1, i * CHUNK)) end
+    end)
+end
+
+local function OnSource(text)
+    local id36, i, n, piece = text:match("^X~(%w+)~(%d+)~(%d+)~(.*)$")
+    local id = GH.From36(id36 or "")
+    if not id then return end
+    i, n = tonumber(i), tonumber(n)
+    if n < 1 or n > 8 or i < 1 or i > n then return end
+    answering[id] = nil
+    local a = incomingSrc[id]
+    if not a or a.n ~= n then
+        a = { n = n, got = 0, parts = {}, t = GetTime() }
+        incomingSrc[id] = a
+    end
+    if not a.parts[i] then a.parts[i] = piece; a.got = a.got + 1 end
+    if a.got < a.n then return end
+    incomingSrc[id] = nil
+    local marksText, src = table.concat(a.parts):match("^([^~]*)~(.*)$")
+    if not marksText then return end
+    local c = GH.Prof.Resolve(id)
+    if not c then
+        c = {}
+        GH.db.recipes[id] = c
+    end
+    local changed = false
+    if c.src == nil and src:sub(1, 1) == "=" then c.src = src:sub(2); changed = true end
+    local marks = {}
+    for m in marksText:gmatch("[^%^]+") do
+        local k, nm, z, s = m:match("^([^;]*);([^;]*);([^;]*);([^;]*)$")
+        if nm then marks[#marks + 1] = { k = k ~= "" and k or nil, n = nm, z = z, s = tonumber(s) } end
+    end
+    if GH.Prof.MergeMarks(c, marks) then changed = true end
+    if changed then GH.Fire("DATA") end
 end
 
 --------------------------------------------------------------------------------
@@ -373,7 +533,8 @@ local function OnHello(text, sender, senderRealm)
         hellos[sender] = h
     end
     for nm, rev36 in body:gmatch("([^,=]+)=(%w+)") do
-        local key = nm:sub(1, 1) == "#" and nm or InName(nm, senderRealm)
+        local first = nm:sub(1, 1)
+        local key = (first == "#" or first == "@") and nm or InName(nm, senderRealm)
         h.list[key] = GH.From36(rev36) or 0
     end
     if last == "1" then
@@ -394,6 +555,12 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         OnHello(text, sender, senderRealm)
     elseif kind == "R" then
         OnRequest(text, sender, senderRealm)
+    elseif kind == "L" then
+        OnList(text)
+    elseif kind == "W" then
+        OnAsk(text)
+    elseif kind == "X" then
+        OnSource(text)
     elseif kind == "Q" then
         local id, dl = text:match("^Q~([^~]+)~(%a)$")
         if id and GH.Requests then GH.Requests.SetDelivery(id, dl) end
@@ -416,8 +583,10 @@ end)
 -- drop half-received entries after two minutes
 C_Timer.NewTicker(30, function()
     local now = GetTime()
-    for k, a in pairs(incoming) do
-        if now - a.t > 120 then incoming[k] = nil end
+    for _, t in ipairs({ incoming, incomingList, incomingSrc }) do
+        for k, a in pairs(t) do
+            if now - a.t > 120 then t[k] = nil end
+        end
     end
 end)
 

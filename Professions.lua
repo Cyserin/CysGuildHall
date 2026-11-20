@@ -157,11 +157,35 @@ end
 
 local scanToken = 0
 
+-- Adds recipe IDs to a profession's full list. Returns the list and whether it grew
+-- (extra = the IDs we have that are not in ids).
+function P.MergeList(pid, ids)
+    local cur = GH.db.allRecipes[pid]
+    local have, out, grew = {}, {}, false
+    for _, id in ipairs(cur or {}) do
+        if not have[id] then have[id] = true; out[#out + 1] = id end
+    end
+    local theirs = {}
+    for _, id in ipairs(ids) do
+        theirs[id] = true
+        if not have[id] then have[id] = true; out[#out + 1] = id; grew = true end
+    end
+    local extra = false
+    for _, id in ipairs(cur or {}) do if not theirs[id] then extra = true; break end end
+    table.sort(out)
+    GH.db.allRecipes[pid] = out
+    return out, grew or not cur, extra
+end
+
 local function Finish(pid, skill, max, learned, partial, all)
     -- the full list (learned or not) feeds the Gaps tab: recipes nobody in the guild knows
     if all and not partial and #all > 0 then
-        table.sort(all)
-        GH.db.allRecipes[pid] = all
+        -- merged with what the guild sent (a list never shrinks); a longer list is shared again
+        local merged, grew = P.MergeList(pid, all)
+        if grew or not GH.db.allRev[pid] then
+            GH.db.allRev[pid] = math.max(GetServerTime(), (GH.db.allRev[pid] or 0) + 1)
+            if GH.Comm then GH.Comm.SendList(pid, 3) end
+        end
     end
     local g = GH.Guild()
     if not g then return end
@@ -355,6 +379,15 @@ local function Mark(c, kind, who, where, skill)
     if #c.t >= MAX_PLACES then return false end
     c.t[#c.t + 1] = { k = kind, n = who, z = where, s = skill }
     return true
+end
+
+-- Marks sent by a guildmate: { { k, n, z, s }, ... }; true when any was new
+function P.MergeMarks(c, marks)
+    local new = false
+    for _, t in ipairs(marks or {}) do
+        if t.n and t.n ~= "" and Mark(c, t.k or "Trainer", t.n, t.z, t.s) then new = true end
+    end
+    return new
 end
 
 local function Here()
