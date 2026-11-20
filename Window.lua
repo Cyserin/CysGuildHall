@@ -131,8 +131,9 @@ local function SortCrafters(list)
 end
 
 -- Alts under their main: one line per player. The line is the main when the main can make
--- it, else that player's best alt. c.chars = every character of that player in the list
--- (main first), c.altOf = the main's name when the line is an alt whose main can't make it.
+-- it (main's own skill, alt names only in the hover tooltip), else that player's best alt.
+-- c.chars = every character of that player in the list (main first), c.altOf = the main's
+-- name when the line is an alt whose main can't make it.
 local function GroupAlts(list)
     if not GH.db.settings.altGroup or not next(GH.altMain) then return list end
     local groups, order = {}, {}
@@ -165,7 +166,7 @@ local function GroupAlts(list)
         for i = 2, #grp do
             local o = grp[i]
             if o.online then e.online = true end
-            if o.s > e.s then e.s, e.m = o.s, o.m end
+            if not head.isMain and o.s > e.s then e.s, e.m = o.s, o.m end
         end
         if #grp > 1 then e.chars = grp end
         if not head.isMain then e.altOf = key end
@@ -488,21 +489,14 @@ local ROW_H = 22
 local ROWS = 16
 local CRAFTER_ROWS = 5
 
--- "Can make it" line extras: "+ Alt Name" (class color when online) or "alt of Main Name"
+-- "Can make it" line extras: only "alt of Main Name" when just an alt can make it
 local function ColorName(full)
     local r, g, b = 0.55, 0.55, 0.55
     if GH.IsOnline(full) then r, g, b = GH.ClassColor(full) end
     return ("|cff%02x%02x%02x%s|r"):format(math.floor(r * 255), math.floor(g * 255), math.floor(b * 255), GH.Short(full))
 end
 local function AltSuffix(c)
-    if c.chars then
-        local rest = {}
-        for i = 2, #c.chars do rest[#rest + 1] = c.chars[i] end
-        if #rest == 1 then return "  |cffd6c49e+|r " .. ColorName(rest[1].name) end
-        local on = 0
-        for _, o in ipairs(rest) do if o.online then on = on + 1 end end
-        return ("  |cffd6c49e+ %d alts%s|r"):format(#rest, on > 0 and (", |cff4fd66b" .. on .. " on|r") or "")
-    elseif c.altOf then
+    if c.altOf then
         return "  |cffd6c49ealt of " .. GH.Short(c.altOf) .. "|r"
     end
     return ""

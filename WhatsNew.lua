@@ -11,6 +11,12 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "0.3.19",
+        improved = {
+            "Can make it is tidier: when a guildmate's main can make the item, the line shows only the main with the main's own skill. Alt names show only when just an alt can make it (alt of Main Name). Hover a line to see every character.",
+            "Item tooltips follow the same rule: no more +1 alt after a main's name.",
+        },
+    },
     { version = "0.3.18",
         added = {
             "Raid Prep due dates: officers can give a target a due date (optional). Targets due soonest sort first, the list shows due Nov 24, and it turns yellow the day before and red once overdue.",

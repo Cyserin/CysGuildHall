@@ -2,6 +2,10 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 0.3.19
+- **Tidier Can make it**: when a guildmate's main can make the item, the line shows only the main (with the main's own skill). An alt's name shows only when just that alt can make it ("alt of Main Name"). Hover still lists every character.
+- Item tooltips drop the "+1 alt" tag the same way.
+
 ## 0.3.18
 - **Raid Prep due dates**: officers can set an optional due date when adding a target or on an existing one. Targets due soonest sort first; the list shows "due Nov 24", yellow the day before, red once overdue.
 - Officers can **change the hand-in and due date** of an existing target (dropdowns on the Parts row): the officer who set it, the guild bank, themselves or a named raider.
