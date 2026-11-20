@@ -74,4 +74,4 @@ jobs:
         env:
           GITHUB_OAUTH: ${{ github.token }}
         with:
-          args: -n "{package-name}-{project-version}:Cys's Guild Hall {project-version}"
+          args: -g forever -n "{package-name}-{project-version}:Cys's Guild Hall {project-version}"
