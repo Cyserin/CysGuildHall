@@ -62,16 +62,14 @@ local function Push(text, check, done, start)
 end
 
 --------------------------------------------------------------------------------
--- Names inside messages: "Name" when on the sender's realm, else "Name-Realm"
+-- Names inside messages: always the full "First-Last" (Forever's last name sits where a
+-- realm would). Names without one (older versions) get theirs from the guild roster.
 --------------------------------------------------------------------------------
 local function OutName(full)
-    local n, r = full:match("^(.-)%-(.+)$")
-    if n and r == GH.MyRealm() then return n end
     return full
 end
-local function InName(name, senderRealm)
-    if name:find("-", 1, true) then return name end
-    return name .. "-" .. (senderRealm or GH.MyRealm())
+local function InName(name)
+    return GH.Canon(name)
 end
 C.OutName, C.InName = OutName, InName
 
@@ -319,8 +317,8 @@ end
 
 GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if prefix ~= GH.PREFIX or channel ~= "GUILD" or not GH.db then return end
-    sender = GH.Full(sender)
-    if not sender or sender == GH.Me() then return end
+    sender = GH.Canon(sender)
+    if not sender or sender == "" or sender == GH.Me() then return end
     local senderRealm = sender:match("%-(.+)$")
     local kind = text:sub(1, 1)
     if kind == "D" then

@@ -79,12 +79,15 @@ function GH.Me()
     return GH.Full(UnitName("player"))
 end
 
--- "Name" when on my realm, else "Name-Realm"
+-- Display name. On Forever the part after the dash is the character's last name, so show
+-- "First Last". An internal server name (digits, e.g. CAMWOWUS2Realm5PvE) is dropped.
+-- A bare first name (not matched to the roster yet) shows as is.
 function GH.Short(full)
     if not full then return "?" end
     local n, r = full:match("^(.-)%-(.+)$")
-    if n and r == GH.MyRealm() then return n end
-    return full
+    if not n then return full end
+    if r:find("%d") then return n end
+    return n .. " " .. r
 end
 
 -- Key for the guild we are in: "Realm-Guild Name", or nil when not in a guild
@@ -141,6 +144,7 @@ end
 --------------------------------------------------------------------------------
 GH.roster = {}       -- [full] = { online, class (file), level, raw }
 GH.rosterBare = {}   -- [lowercase name without realm] = same entry (realm spellings can differ)
+GH.rosterFirst = {}  -- [lowercase first name] = { "First-Last", ... } (to find a member's real last name)
 GH.rosterCount = 0
 
 local function Bare(full)
@@ -173,7 +177,7 @@ local function ReadRoster()
     if not IsInGuild() then wipe(GH.roster); GH.rosterCount = 0; return end
     local n = GetNumGuildMembers() or 0
     if n == 0 then return end
-    local new, bare, byGuid = {}, {}, {}
+    local new, bare, byGuid, first = {}, {}, {}, {}
     local count = 0
     for i = 1, n do
         local name, _, _, level, _, _, _, _, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
@@ -181,8 +185,12 @@ local function ReadRoster()
             local e = { online = online and true or false, class = classFile, level = level, raw = name }
             -- Forever's roster writes "Name Realm" (a space): make it "Name-Realm" like chat names
             name = name:gsub("^(%S+) (%S+)$", "%1-%2")
-            new[GH.Full(name)] = e
+            e.full = GH.Full(name)
+            new[e.full] = e
             bare[Bare(name)] = e
+            local fl = first[Bare(name)]
+            if not fl then fl = {}; first[Bare(name)] = fl end
+            fl[#fl + 1] = e.full
             if type(guid) == "string" then byGuid[guid] = e end
             count = count + 1
         end
@@ -191,9 +199,55 @@ local function ReadRoster()
         GH.roster = new
         GH.rosterBare = bare
         GH.rosterGuid = byGuid
+        GH.rosterFirst = first
         GH.rosterCount = count
+        GH.FixNames()
         GH.Fire("ROSTER")
     end
+end
+
+-- A member's real "First-Last" name. On Forever the game gives addon messages only the
+-- first name, so the last name comes from the guild roster: by character ID, exact name,
+-- or a first name only one member has. Unknown: the name as given (never our last name).
+function GH.Canon(name)
+    if not name or name == "" then return name end
+    if name == GH.Me() or name == UnitName("player") then return GH.Me() end
+    if GH.roster[name] or (GH.db and GH.db.mine[name]) then return name end
+    local guid = GH.GuidOf(name)
+    local e = guid and GH.rosterGuid[guid]
+    if e and e.full then return e.full end
+    local list = GH.rosterFirst[Bare(name)]
+    if list and #list == 1 then return list[1] end
+    return name
+end
+
+-- Repair names saved under the wrong last name (0.3.9 and older gave everyone ours)
+local function Rekey(t, merge)
+    if not t then return false end
+    local moves
+    for k in pairs(t) do
+        local c = GH.Canon(k)
+        if c ~= k then moves = moves or {}; moves[k] = c end
+    end
+    if not moves then return false end
+    for old, new in pairs(moves) do
+        local v = t[old]
+        t[old] = nil
+        if t[new] == nil then t[new] = v elseif merge then t[new] = merge(t[new], v) end
+    end
+    return true
+end
+function GH.FixNames()
+    local g = GH.Guild()
+    if not g then return end
+    local changed = Rekey(g.members, function(a, b) return ((b.rev or 0) > (a.rev or 0)) and b or a end)
+    Rekey(g.missing)
+    for _, r in pairs(g.requests or {}) do
+        local by, cr = r.by and GH.Canon(r.by), r.cr and GH.Canon(r.cr)
+        if by ~= r.by or cr ~= r.cr then r.by, r.cr, changed = by, cr, true end
+    end
+    if Rekey(g.guids) then changed = true end   -- last: Canon reads guids by the old names
+    if changed then GH.Fire("DATA") end
 end
 
 function GH.IsOnline(full)
