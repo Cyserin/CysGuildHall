@@ -2,6 +2,14 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 1.0.0
+- **Roster tab**: every member (alts folded under their main) with class, level, rank, professions and last online; Cys's Guild Hall users carry its seal. Detail shows notes, alts, every character's professions with skill and recipe count, and addon version. Search by name, rank or profession; online only; sort by last online, name, level or rank. `/guildhall roster`.
+- **Calendar**: Edit and Delete for the event's creator or a moderator (Delete needs a second click).
+- **Calendar**: Raid Prep targets due on the event's day show on the event (click to open Raid Prep).
+- **Calendar**: a pop-up 15 minutes before events you signed up for or said maybe to (Options switch).
+- **Calendar**: hover a role or class count above Who is coming to see who is going in it.
+- The **Cys's Guild Hall seal** on the minimap button and in the addon list.
+
 ## 0.4.0
 - **Calendar tab**: the guild's events for the next 30 days, read from the game's calendar. Pick one to sign up, go tentative or remove yourself (or accept / tentative / decline an invite), and see who is coming grouped by answer with class colors.
 - Officers can **add events** from the tab: title, sign-up event or announcement, type, day, start time (realm time), description. They are real guild calendar events, so guildmates without the addon see them in the game's calendar.

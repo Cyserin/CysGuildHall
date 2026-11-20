@@ -12,6 +12,8 @@ Works for any guild. Every member who runs it shares the recipes they know, so a
 - **Materials pop-up**: when a crafter claims your request you see each reagent as needed, (what you have) and what the crafter has, plus what is still short between you two (`/guildhall mats` reopens it).
 - **Gaps tab**: professions nobody in the guild has, and recipes nobody knows yet, for every profession anyone in the guild has (full recipe lists are shared, so you don't need the profession yourself). Each shows where to learn it: trainers and vendors visited (Waylaid supply quartermasters included) are marked automatically, boss / quest drops come from the Forever Dungeon Journal addon when you have it, and opening a recipe asks the guild for what a guildmate has read.
 - **Raid Prep tab**: officers set guild targets (an item and how many the guild needs). Each target lists the item and the materials from its recipe; crafters claim how many they will make, gatherers claim an amount of a material, and everyone keeps their delivered count up to date, so the guild sees the progress.
+- **Calendar tab**: the guild's events for the next 30 days, straight from the game's calendar. Sign up, go tentative or remove yourself; pick your role (Tank / Healer / DPS) and see who is coming with class and role icons plus a role and class count. Officers add events (sign-up or announcement) that everyone sees in the game's calendar, and the creator can edit or delete them. Raid Prep targets due that day show on the event, and a pop-up reminds you 15 minutes before an event you signed up for.
+- **Roster tab**: every member with alts folded under their main, level, rank, professions and when they were last on; members running Cys's Guild Hall carry its seal. Pick one for their notes, alts and every character's professions and skill.
 - **Options**: tooltip names, chat notes, materials pop-up, guild news pop-ups, minimap button, how long done requests stay listed, and your characters' professions (dropped ones are removed by themselves at login).
 - **Mail it**: at a mailbox, the Send Mail tab shows your claimed requests whose requester asked for mail. One click fills in their name and a subject and attaches the crafted items; you press Send, and the request is marked done when it goes out.
 - **Version check**: a quiet chat note when a guildmate runs a newer Guild Hall, and who runs which version in Options (`/guildhall versions`).
@@ -32,12 +34,12 @@ Everyone in the guild needs the addon for their recipes to show up. Data travels
 
 ## Use
 - `/guildhall` opens the window; `/guildhall <item>` searches. Minimap button: left click Crafting, right click Requests.
-- `/guildhall gaps`, `/guildhall requests`, `/guildhall prep`, `/guildhall options` open those tabs.
+- `/guildhall gaps`, `/guildhall requests`, `/guildhall prep`, `/guildhall calendar`, `/guildhall roster`, `/guildhall options` open those tabs.
 - `/guildhall news` (or What's new on the Options tab) shows what changed; it also opens once by itself after an update. Full history: [CHANGELOG.md](CHANGELOG.md).
 - `/guildhall versions` lists who runs which version; `/guildhall check` shows what the addon knows; `/guildhall sync` asks the guild for newer data.
 
 ## Coming later
-Guild bank / bank-alt stock with have / need / missing, roster, calendar sign-ups.
+Guild bank / bank-alt stock with have / need / missing (once the guild bank is open on Forever).
 
 ## Feedback
 Found a bug or have an idea? Open an issue on GitHub.

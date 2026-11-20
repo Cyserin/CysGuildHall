@@ -4,7 +4,9 @@
 -- officers add new ones at the bottom. Right: the picked event, your answer
 -- (sign up / tentative / remove, or accept / tentative / decline) and who is coming.
 -- Everything goes through C_Calendar, so players without the addon see the same
--- events in the game's calendar.
+-- events in the game's calendar. Event creators / moderators can edit or delete from
+-- here; Raid Prep targets due that day show on the event; a pop-up reminds you 15
+-- minutes before an event you said yes / maybe to.
 --------------------------------------------------------------------------------
 local GH = CysGuildHall
 local S = GH.Style
@@ -333,14 +335,50 @@ end
 local function DayItems()
     local now = C_DateAndTime.GetCurrentCalendarTime()
     local items = {}
-    for i = 0, 13 do
+    for i = 0, math.max(13, state.form.day or 0) do
         local y, m, d, wd = DayAfter(now, i)
         items[#items + 1] = { i, DayLabel(y, m, d, wd) }
     end
     return items
 end
 
+local ExitEdit
+
+local function Save()
+    local f = state.form
+    local e
+    for _, x in ipairs(state.events) do if x.key == state.edit then e = x end end
+    if not e then ExitEdit(); Msg("That event is gone from the calendar.", true); return end
+    local title = (panel.titleBox:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if title == "" then Msg("Give the event a title.", true); return end
+    if state.opened ~= e.key or not C_Calendar.IsEventOpen() then
+        state.sel = e.key
+        OpenSel()
+        Msg("Loading the event, press Save again in a moment.")
+        return
+    end
+    local now = C_DateAndTime.GetCurrentCalendarTime()
+    local y, m, d = DayAfter(now, f.day)
+    local h = (f.hour % 12) + (f.ampm == "PM" and 12 or 0)
+    if f.day == 0 and h * 60 + f.min <= now.hour * 60 + now.minute then
+        Msg("That time has already passed today.", true)
+        return
+    end
+    local ok, err = pcall(function()
+        C_Calendar.EventSetType(f.type)
+        C_Calendar.EventSetTitle(title)
+        C_Calendar.EventSetDescription(panel.descBox:GetText() or "")
+        C_Calendar.EventSetDate(m, d, y)
+        C_Calendar.EventSetTime(h, f.min)
+        if C_Calendar.EventHaveSettingsChanged() then C_Calendar.UpdateEvent() end
+    end)
+    if not ok then Msg("The game would not take it: " .. tostring(err), true); return end
+    ExitEdit()
+    Msg("Saved " .. title .. ".")
+end
+
 local function Create()
+    if state.edit then return Save() end
     local f = state.form
     local title = (panel.titleBox:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
     if title == "" then Msg("Give the event a title.", true); return end
@@ -418,14 +456,17 @@ local function PaintWho()
     end
     local n = { 0, 0, 0, 0, 0 }
     local roles, classes, order = { T = 0, H = 0, D = 0, ["?"] = 0 }, {}, {}
+    local roleWho, classWho = { T = {}, H = {}, D = {}, ["?"] = {} }, {}
     for _, p in ipairs(list) do
         n[p.b] = n[p.b] + 1
         if p.b == 1 then
             local r = p.role or "?"
             roles[r] = roles[r] + 1
+            table.insert(roleWho[r], p)
             if p.class then
-                if not classes[p.class] then classes[p.class] = 0; order[#order + 1] = p.class end
+                if not classes[p.class] then classes[p.class] = 0; order[#order + 1] = p.class; classWho[p.class] = {} end
                 classes[p.class] = classes[p.class] + 1
+                table.insert(classWho[p.class], p)
             end
         end
     end
@@ -441,6 +482,8 @@ local function PaintWho()
         if roles[r] > 0 then
             if r == "?" then s.icon:Hide() else SetRoleIcon(s.icon, r) end
             s.text:SetText((r == "?" and "|cff8a8a8a? |r" or "") .. roles[r])
+            s.title = r == "?" and "No role picked" or ROLE[r][1]
+            s.who = roleWho[r]
             s:ClearAllPoints()
             s:SetPoint("LEFT", mk, "LEFT", x, 0)
             s:Show()
@@ -456,6 +499,8 @@ local function PaintWho()
         if c then
             SetClassIcon(s.icon, c)
             s.text:SetText(classes[c])
+            s.title = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[c]) or (c:sub(1, 1) .. c:sub(2):lower())
+            s.who = classWho[c]
             s:ClearAllPoints()
             s:SetPoint("LEFT", mk, "LEFT", x, 0)
             s:Show()
@@ -512,6 +557,25 @@ local function PaintDetail(e)
     end
     local desc = info and info.description or ""
     d.desc:SetText(desc ~= "" and desc or (info and "|cff8a8a8aNo description.|r" or ""))
+    -- raid prep targets due that day
+    local prep = UI.PrepFor(e)
+    d.prep.list = prep
+    if prep and #prep > 0 then
+        local done, names = 0, {}
+        for _, t in ipairs(prep) do
+            if (t._deliv or 0) >= t.n then done = done + 1 end
+            names[#names + 1] = GH.Prof.ItemName(t.it) or ("Item " .. t.it)
+        end
+        d.prep.text:SetText(("|cffd9a421Raid prep:|r %d due, %d done  |cffd6c49e%s|r"):format(#prep, done, table.concat(names, ", ")))
+        d.prep:Show()
+    else
+        d.prep:Hide()
+    end
+    -- edit / delete (creator or moderator)
+    local ok, can = pcall(C_Calendar.ContextMenuEventCanEdit, e.off, e.day, e.idx)
+    local canEdit = ok and can and not e.past and true or false
+    d.editBtn:SetShown(canEdit)
+    d.delBtn:SetShown(canEdit)
     if e.ct == "GUILD_ANNOUNCEMENT" then
         d.you:SetText("")
     elseif e.past then
@@ -543,10 +607,82 @@ function Paint()
     PaintList()
     PaintDetail(e)
     local officer = GH.Prep.IAmOfficer()
-    panel.addBox:SetShown(officer)
-    panel.notOfficer:SetShown(not officer)
+    panel.addBox:SetShown(officer or state.edit ~= nil)
+    panel.notOfficer:SetShown(not officer and not state.edit)
 end
 UI.Paint = Paint
+
+-- Raid Prep targets whose due day is the event's day (realm date vs your local due day)
+function UI.PrepFor(e)
+    if not e or not GH.Prep or not GH.Prep.All then return nil end
+    local ok, list = pcall(GH.Prep.All)
+    if not ok or not list then return nil end
+    local out = {}
+    for _, t in ipairs(list) do
+        if t.du and t.du > 0 then
+            local d = date("*t", t.du - 60)
+            if d.year == e.t.year and d.month == e.t.month and d.day == e.t.monthDay then out[#out + 1] = t end
+        end
+    end
+    return out
+end
+
+-- open the tab on one event (reminder pop-up)
+function UI.Select(key)
+    state.sel = key
+    if GH.Window and GH.Window.Open then GH.Window.Open(nil, "cal") end
+    Paint()
+end
+
+local function FillForm(e)
+    local f = state.form
+    local now = C_DateAndTime.GetCurrentCalendarTime()
+    f.day = math.max(0, math.floor((Noon(e.t) - Noon(now)) / 86400 + 0.5))
+    f.type = e.type or 4
+    f.hour = e.t.hour % 12 == 0 and 12 or e.t.hour % 12
+    f.min = e.t.minute - e.t.minute % 15
+    f.ampm = e.t.hour >= 12 and "PM" or "AM"
+    panel.titleBox:SetText(e.title or "")
+    panel.descBox:SetText(state.info and state.info.description or "")
+    for _, dd in ipairs(panel.formDrops) do dd:Refresh() end
+end
+
+local function EnterEdit(e)
+    state.edit = e.key
+    FillForm(e)
+    panel.formHead:SetText("Edit event")
+    panel.kindDrop:Hide()
+    panel.titleBox:SetWidth(296)
+    panel.addBtn:SetLabel("Save")
+    panel.cancelBtn:Show()
+    Msg("Change what you need, then Save.")
+    Paint()
+end
+
+function ExitEdit()
+    state.edit = nil
+    panel.formHead:SetText("New event")
+    panel.kindDrop:Show()
+    panel.titleBox:SetWidth(190)
+    panel.titleBox:SetText("")
+    panel.descBox:SetText("")
+    panel.addBtn:SetLabel("Add")
+    panel.cancelBtn:Hide()
+    Paint()
+end
+
+local function Delete(e)
+    local ok, err = pcall(function()
+        C_Calendar.ContextMenuSelectEvent(e.off, e.day, e.idx)
+        C_Calendar.ContextMenuEventRemove()
+    end)
+    if not ok then Msg("The game would not delete it: " .. tostring(err), true); return end
+    if state.edit == e.key then ExitEdit() end
+    state.sel, state.tried, state.opened = nil, nil, nil
+    Msg("Deleted " .. e.title .. ".")
+    UI.PaintSoon(true)
+end
+UI.EnterEdit, UI.Delete = EnterEdit, Delete
 
 -- from Comm: a guildmate's role for an event, and a request to resend ours
 function UI.OnRole(text, sender)
@@ -590,6 +726,44 @@ GH.On("CALENDAR_UPDATE_ERROR", function(reason)
     if panel and panel:IsShown() and type(reason) == "string" then Msg(reason, true) end
 end)
 GH.On("PLAYER_REGEN_ENABLED", function() if state.locked then UI.PaintSoon(true) end end)
+
+--------------------------------------------------------------------------------
+-- Reminder: a pop-up 15 minutes before an event you said yes / maybe to
+--------------------------------------------------------------------------------
+local REMIND_MIN = 15
+local YES = { [1] = true, [3] = true, [5] = true, [6] = true, [8] = true }
+local reminded = {}
+local function CheckReminders()
+    if not GH.db or not GH.db.settings.calRemind or InCombatLockdown() or not IsInGuild() then return end
+    -- don't move the game's calendar while someone is browsing it
+    if CalendarFrame and CalendarFrame:IsShown() then return end
+    Rescan()
+    local now = C_DateAndTime.GetCurrentCalendarTime()
+    local nowT = time({ year = now.year, month = now.month, day = now.monthDay, hour = now.hour, min = now.minute })
+    for _, e in ipairs(state.events) do
+        if YES[e.st] and not reminded[e.key] and e.ct == "GUILD_EVENT" then
+            local t = time({ year = e.t.year, month = e.t.month, day = e.t.monthDay, hour = e.t.hour, min = e.t.minute })
+            local mins = (t - nowT) / 60
+            if mins >= 0 and mins <= REMIND_MIN then
+                reminded[e.key] = true
+                if GH.Toast and GH.Toast.Add then
+                    local text = mins < 1 and (e.title .. " starts now.")
+                        or ("%s starts in %d min (%s)."):format(e.title, math.floor(mins + 0.5), H12(e.t.hour, e.t.minute))
+                    local key = e.key
+                    GH.Toast.Add(text, e.icon or ICONS[e.type] or 134400, nil, function() UI.Select(key) end)
+                end
+            end
+        end
+    end
+    if panel and panel:IsShown() then Paint() end
+end
+GH.On("PLAYER_LOGIN", function()
+    C_Timer.After(15, function()
+        pcall(C_Calendar.OpenCalendar)
+        C_Timer.After(5, CheckReminders)
+        C_Timer.NewTicker(60, CheckReminders)
+    end)
+end)
 
 --------------------------------------------------------------------------------
 -- Build (called by the main window once)
@@ -689,6 +863,12 @@ function UI.Build(frame)
     panel.addBox = add
     local al = Label(add, "New event")
     al:SetPoint("TOPLEFT", 2, 0)
+    panel.formHead = al
+    local cancel = S.Button(add, 60, 16, "Cancel")
+    cancel:SetPoint("TOPRIGHT", add, "TOPRIGHT", 0, 2)
+    cancel:SetScript("OnClick", function() ExitEdit(); Msg("") end)
+    cancel:Hide()
+    panel.cancelBtn = cancel
     local f = state.form
 
     local title = S.EditBox(add, 190, 22)
@@ -702,6 +882,7 @@ function UI.Build(frame)
         return { { "s", "Sign-up event" }, { "a", "Announcement" } }
     end, function() return f.kind end, function(v) f.kind = v end)
     kind:SetPoint("LEFT", title, "RIGHT", 4, 0)
+    panel.kindDrop = kind
     Tip(kind, "Sign-up event or announcement", "Sign-up: guildmates sign up or say tentative. Announcement: a note on the calendar, no answers.")
 
     local typ = S.Dropdown(add, 74, 20, function()
@@ -728,6 +909,7 @@ function UI.Build(frame)
     end, function() return f.ampm end, function(v) f.ampm = v end)
     ampm:SetPoint("LEFT", min, "RIGHT", 2, 0)
     Tip(hour, "Start time", "Realm time, the same time the game's calendar shows.")
+    panel.formDrops = { typ, day, hour, min, ampm }
 
     local desc = S.EditBox(add, 240, 22)
     desc:SetPoint("TOPLEFT", typ, "BOTTOMLEFT", 0, -8)
@@ -775,10 +957,32 @@ function UI.Build(frame)
     d.desc = S.Text(body, 11, T.text)
     d.desc:SetPoint("TOPLEFT", d.by, "BOTTOMLEFT", 0, -8)
     d.desc:SetPoint("RIGHT", body, "RIGHT", -12, 0)
-    d.desc:SetHeight(44)
+    d.desc:SetHeight(28)
     d.desc:SetJustifyV("TOP")
     d.desc:SetWordWrap(true)
-    if d.desc.SetMaxLines then d.desc:SetMaxLines(3) end
+    if d.desc.SetMaxLines then d.desc:SetMaxLines(2) end
+    -- raid prep due that day (click: Raid Prep tab)
+    local prep = CreateFrame("Button", nil, body)
+    prep:SetPoint("TOPLEFT", d.desc, "BOTTOMLEFT", 0, -4)
+    prep:SetPoint("RIGHT", body, "RIGHT", -12, 0)
+    prep:SetHeight(16)
+    prep.text = S.Text(prep, 11, T.text)
+    prep.text:SetAllPoints()
+    prep.text:SetWordWrap(false)
+    prep:SetScript("OnClick", function() if GH.Window and GH.Window.Open then GH.Window.Open(nil, "prep") end end)
+    prep:SetScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("Raid prep due this day", 1, 1, 1)
+        for _, t in ipairs(s.list or {}) do
+            local left = GH.Prof.ItemName(t.it) or ("Item " .. t.it)
+            GameTooltip:AddDoubleLine(left, ("%d / %d handed in"):format(t._deliv or 0, t.n), 0.84, 0.77, 0.62, 1, 1, 1)
+        end
+        GameTooltip:AddLine("Click to open Raid Prep.", 0.84, 0.77, 0.62)
+        GameTooltip:Show()
+    end)
+    prep:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    prep:Hide()
+    d.prep = prep
 
     d.actY = -128
     d.you = S.Text(body, 12, T.text)
@@ -822,6 +1026,20 @@ function UI.Build(frame)
         s.icon:SetPoint("LEFT")
         s.text = S.Text(s, 11, T.text)
         s.text:SetPoint("LEFT", s.icon, "RIGHT", 2, 0)
+        -- hover: who is going in this role / class
+        s:EnableMouse(true)
+        s:SetScript("OnEnter", function(f)
+            if not f.who then return end
+            GameTooltip:SetOwner(f, "ANCHOR_BOTTOM")
+            GameTooltip:SetText(("%s  |cffd6c49e%d going|r"):format(f.title or "", #f.who), 1, 0.82, 0)
+            for _, p in ipairs(f.who) do
+                local c = p.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[p.class]
+                local role = p.role and ROLE[p.role] and ROLE[p.role][1] or ""
+                GameTooltip:AddDoubleLine(Who(p.name), role, c and c.r or 0.88, c and c.g or 0.88, c and c.b or 0.88, 0.84, 0.77, 0.62)
+            end
+            GameTooltip:Show()
+        end)
+        s:SetScript("OnLeave", function() GameTooltip:Hide() end)
         s:Hide()
         return s
     end
@@ -863,6 +1081,32 @@ function UI.Build(frame)
     d.whoNote:SetPoint("CENTER")
     d.whoMore = S.Text(body, 10, T.dim, "RIGHT")
     d.whoMore:SetPoint("TOPRIGHT", wb, "BOTTOMRIGHT", 0, -3)
+
+    d.editBtn = S.Button(body, 60, 18, "Edit")
+    d.editBtn:SetPoint("TOPLEFT", wb, "BOTTOMLEFT", 0, -4)
+    d.editBtn:SetScript("OnClick", function()
+        local e = Selected()
+        if e then EnterEdit(e) end
+    end)
+    Tip(d.editBtn, "Edit this event", "Fills in the form on the left. Save sends it to the game's calendar.")
+    d.delBtn = S.Button(body, 60, 18, "Delete")
+    d.delBtn:SetPoint("LEFT", d.editBtn, "RIGHT", 4, 0)
+    d.delBtn:SetScript("OnClick", function(b)
+        local e = Selected()
+        if not e then return end
+        if not b.armed then
+            b.armed = true
+            b:SetLabel("|cffff6060Sure?|r")
+            C_Timer.After(3, function() b.armed = nil; b:SetLabel("Delete") end)
+            return
+        end
+        b.armed = nil
+        b:SetLabel("Delete")
+        Delete(e)
+    end)
+    Tip(d.delBtn, "Delete this event", "Click twice. It is removed from the guild calendar for everyone.")
+    d.editBtn:Hide()
+    d.delBtn:Hide()
 
     return panel
 end

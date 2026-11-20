@@ -579,7 +579,7 @@ local Paint, PaintDetail, SetTab, PaintOptions, BuildOptions, PaintVersions
 local function HintText()
     if state.tab == "requests" then return "Search requests..." end
     if state.tab == "gaps" then return "Search recipes nobody knows..." end
-    if state.tab == "options" or state.tab == "prep" or state.tab == "cal" then return "" end
+    if state.tab == "options" or state.tab == "prep" or state.tab == "cal" or state.tab == "roster" then return "" end
     return "Search all guild crafts..."
 end
 
@@ -595,6 +595,8 @@ local function Rebuild()
     elseif state.tab == "cal" then
         -- and the calendar panel
         if GH.CalPanel then GH.CalPanel.Paint() end
+    elseif state.tab == "roster" then
+        if GH.RosterPanel then GH.RosterPanel.Paint() end
     elseif state.tab == "gaps" then
         if state.query ~= "" then
             for _, r in ipairs(I.Gaps(nil, state.query, nil, state.gapSrc)) do list[#list + 1] = r end
@@ -1083,9 +1085,10 @@ function SetTab(tab)
     frame.options:SetShown(tab == "options")
     if frame.prep then frame.prep:SetShown(tab == "prep") end
     if frame.cal then frame.cal:SetShown(tab == "cal") end
+    if frame.roster then frame.roster:SetShown(tab == "roster") end
     frame.srcBtn:SetShown(tab == "gaps")
     frame.search:SetTextInsets(6, tab == "gaps" and (frame.srcBtn:GetWidth() + 10) or 6, 0, 0)
-    if tab == "options" or tab == "prep" or tab == "cal" then frame.search:ClearFocus() end
+    if tab == "options" or tab == "prep" or tab == "cal" or tab == "roster" then frame.search:ClearFocus() end
     if frame.search:GetText() ~= "" then
         frame.search:SetText("")   -- rebuilds through OnTextChanged
     else
@@ -1162,6 +1165,7 @@ function BuildOptions()
         set.minimapHide = not v
         if GH.UpdateMinimapButton then GH.UpdateMinimapButton() end
     end)
+    AddCheck("Pop-up 15 min before events you signed up for", function() return set.calRemind end, function(v) set.calRemind = v end)
     opt.done = S.Stepper(opt, "Done requests stay listed", { 1, 3, 6, 12, 24, 48 },
         function() return set.doneHours or 24 end, function(v) set.doneHours = v end, DoneFmt)
     opt.done:SetWidth(280)
@@ -1342,8 +1346,11 @@ local function Build()
     local tCal = S.Button(header, 72, 22, "Calendar")
     tCal:SetPoint("RIGHT", tOpt, "LEFT", -10, 0)
     tCal:SetScript("OnClick", function() SetTab("cal") end)
+    local tRoster = S.Button(header, 60, 22, "Roster")
+    tRoster:SetPoint("RIGHT", tCal, "LEFT", -4, 0)
+    tRoster:SetScript("OnClick", function() SetTab("roster") end)
     local tPrep = S.Button(header, 76, 22, "Raid Prep")
-    tPrep:SetPoint("RIGHT", tCal, "LEFT", -4, 0)
+    tPrep:SetPoint("RIGHT", tRoster, "LEFT", -4, 0)
     tPrep:SetScript("OnClick", function() SetTab("prep") end)
     local tGaps = S.Button(header, 56, 22, "Gaps")
     tGaps:SetPoint("RIGHT", tPrep, "LEFT", -4, 0)
@@ -1357,6 +1364,7 @@ local function Build()
     frame.tabs.craft, frame.tabs.requests, frame.tabs.gaps, frame.tabs.options = tCraft, tReq, tGaps, tOpt
     frame.tabs.prep = tPrep
     frame.tabs.cal = tCal
+    frame.tabs.roster = tRoster
     -- a long guild name stops before the tabs
     frame.guild:SetPoint("RIGHT", tCraft, "LEFT", -8, 0)
     frame.guild:SetJustifyH("LEFT")
@@ -1630,9 +1638,14 @@ local function Build()
     BuildOptions()
     if GH.PrepPanel then frame.prep = GH.PrepPanel.Build(frame) end
     if GH.CalPanel then frame.cal = GH.CalPanel.Build(frame) end
+    if GH.RosterPanel then frame.roster = GH.RosterPanel.Build(frame) end
 
     frame:SetScript("OnShow", function()
         frame.guild:SetText(GetGuildInfo("player") or "")
+        if GH.NeedsRestart() and not frame.toldRestart then
+            frame.toldRestart = true
+            GH.Print("|cffff6060some new parts (like the Roster tab) are missing until you exit and restart World of Warcraft.|r")
+        end
         if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
         Rebuild()
     end)

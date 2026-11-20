@@ -4,7 +4,7 @@
 --------------------------------------------------------------------------------
 local GH = CysGuildHall
 
-local ICON = "Interface\\Icons\\Trade_BlackSmithing"
+local ICON = "Interface\\AddOns\\CysGuildHall\\Media\\Logo"
 
 local function Tooltip(owner, anchor)
     GameTooltip:SetOwner(owner, anchor or "ANCHOR_LEFT")
@@ -55,10 +55,9 @@ local function Build()
     bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
     -- full square icon inside the ring (no round mask: that squashed it)
     local icon = mm:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(19, 19)
+    icon:SetSize(20, 20)
     icon:SetPoint("TOPLEFT", 6, -6)
     icon:SetTexture(ICON)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     mm.icon = icon
     local ring = mm:CreateTexture(nil, "OVERLAY")
     ring:SetSize(53, 53)

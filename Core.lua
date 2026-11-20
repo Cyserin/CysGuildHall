@@ -193,14 +193,20 @@ local function ReadRoster()
     local new, bare, byGuid, first = {}, {}, {}, {}
     local count = 0
     for i = 1, n do
-        local name, rankName, rankIndex, level, _, _, note, onote, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
+        local name, rankName, rankIndex, level, _, zone, note, onote, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
         if type(name) == "string" and name ~= "" then
             local e = { online = online and true or false, class = classFile, level = level, raw = name, rank = rankIndex,
+                zone = type(zone) == "string" and zone or nil,
                 rankName = type(rankName) == "string" and rankName or nil,
                 note = type(note) == "string" and note or nil, onote = type(onote) == "string" and onote or nil }
             -- Forever's roster writes "Name Realm" (a space): make it "Name-Realm" like chat names
             name = name:gsub("^(%S+) (%S+)$", "%1-%2")
             e.full = GH.Full(name)
+            -- hours since last online (Roster tab)
+            if not e.online and GetGuildRosterLastOnline then
+                local ok, y, mo, d, h = pcall(GetGuildRosterLastOnline, i)
+                if ok and type(y) == "number" then e.lastH = ((y * 365 + (mo or 0) * 30 + (d or 0)) * 24) + (h or 0) end
+            end
             new[e.full] = e
             bare[Bare(name)] = e
             local fl = first[Bare(name)]
@@ -367,7 +373,7 @@ end)
 --------------------------------------------------------------------------------
 -- Saved data
 --------------------------------------------------------------------------------
-local DEFAULTS = { tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true, altGroup = true, altRank = "" }
+local DEFAULTS = { tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true, altGroup = true, altRank = "", calRemind = true }
 
 GH.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end
@@ -389,6 +395,23 @@ GH.On("ADDON_LOADED", function(name)
     db.guilds = db.guilds or {}     -- [guildKey] = { members = { [full] = { rev, profs = { [profID] = { s, m, r = {recipeIDs} } } } } }
     GH.db = db
     GH.Fire("LOADED")
+end)
+
+-- Files added in an update only load after a full game restart (a /reload keeps the
+-- old file list). Each release that adds a file lists one table it creates here.
+GH.NEW_FILES = { "RosterPanel" }
+function GH.NeedsRestart()
+    for _, k in ipairs(GH.NEW_FILES) do
+        if GH[k] == nil then return true end
+    end
+    return false
+end
+GH.On("PLAYER_LOGIN", function()
+    if GH.NeedsRestart() then
+        C_Timer.After(8, function()
+            GH.Print("|cffff6060updated with new files: exit and restart World of Warcraft (a /reload is not enough) to finish the update.|r")
+        end)
+    end
 end)
 
 GH.On("PLAYER_LOGIN", function()
@@ -488,6 +511,8 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Window then GH.Window.Open(nil, "prep") end
     elseif msg == "calendar" or msg == "cal" or msg == "events" then
         if GH.Window then GH.Window.Open(nil, "cal") end
+    elseif msg == "roster" or msg == "members" then
+        if GH.Window then GH.Window.Open(nil, "roster") end
     elseif msg == "minimap" then
         GH.db.settings.minimapHide = not GH.db.settings.minimapHide
         if GH.UpdateMinimapButton then GH.UpdateMinimapButton() end
@@ -512,7 +537,7 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     elseif msg == "help" then
-        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, prep, calendar, mats, gaps, options, versions, news, welcome, minimap, check, sync, tooltip, notify.")
+        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, prep, calendar, roster, mats, gaps, options, versions, news, welcome, minimap, check, sync, tooltip, notify.")
     elseif msg ~= "" then
         if GH.Window then GH.Window.Open(msg) end
     else

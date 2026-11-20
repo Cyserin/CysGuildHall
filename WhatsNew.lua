@@ -11,6 +11,18 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "1.0.0",
+        added = {
+            "Roster tab: every member with alts folded under their main, level, rank, professions and when they were last on. Members who run Cys's Guild Hall carry its seal. Pick one to see their notes, alts and every character's professions and skill. Search by name, rank or profession, or show online only.",
+            "Calendar: the event's creator (or a moderator) can Edit or Delete it right from the tab. Edit fills in the form on the left; Delete asks for a second click.",
+            "Calendar: Raid Prep targets due on the event's day show on the event. Click the line to open Raid Prep.",
+            "Calendar: a pop-up 15 minutes before an event you signed up for (or said maybe to). Click it to open the event. Turn it off on the Options tab.",
+            "Calendar: hover a role or class count above Who is coming to see exactly who is going in it.",
+        },
+        improved = {
+            "New look: the Cys's Guild Hall seal on the minimap button and in the addon list.",
+        },
+    },
     { version = "0.4.0",
         added = {
             "Calendar tab: the guild's events for the next 30 days, straight from the game's calendar. Pick one to sign up, say tentative or remove yourself (or accept / decline an invite) and see who is coming, grouped by answer with class colors.",
