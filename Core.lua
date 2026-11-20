@@ -193,9 +193,9 @@ local function ReadRoster()
     local new, bare, byGuid, first = {}, {}, {}, {}
     local count = 0
     for i = 1, n do
-        local name, _, _, level, _, _, _, _, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
+        local name, _, rankIndex, level, _, _, _, _, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
         if type(name) == "string" and name ~= "" then
-            local e = { online = online and true or false, class = classFile, level = level, raw = name }
+            local e = { online = online and true or false, class = classFile, level = level, raw = name, rank = rankIndex }
             -- Forever's roster writes "Name Realm" (a space): make it "Name-Realm" like chat names
             name = name:gsub("^(%S+) (%S+)$", "%1-%2")
             e.full = GH.Full(name)
@@ -401,6 +401,8 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Window then GH.Window.Open(nil, "gaps") end
     elseif msg == "requests" then
         if GH.Window then GH.Window.Open(nil, "requests") end
+    elseif msg == "prep" or msg == "raid" or msg == "raidprep" then
+        if GH.Window then GH.Window.Open(nil, "prep") end
     elseif msg == "minimap" then
         GH.db.settings.minimapHide = not GH.db.settings.minimapHide
         if GH.UpdateMinimapButton then GH.UpdateMinimapButton() end
@@ -425,7 +427,7 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     elseif msg == "help" then
-        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, mats, gaps, options, versions, news, welcome, minimap, check, sync, tooltip, notify.")
+        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, prep, mats, gaps, options, versions, news, welcome, minimap, check, sync, tooltip, notify.")
     elseif msg ~= "" then
         if GH.Window then GH.Window.Open(msg) end
     else

@@ -17,6 +17,11 @@ local function AddLine(tooltip, data)
             tooltip:AddLine("Not learned in the guild", 0.85, 0.64, 0.13)
         end
     end
+    -- raid prep targets this item is part of
+    local prep = GH.Prep and GH.Prep.TooltipLines(id)
+    for _, line in ipairs(prep or {}) do
+        tooltip:AddLine("|cffd9a421Raid prep:|r " .. line, 1, 1, 1, true)
+    end
     local crafters = GH.Index.CraftersOfItem(id)
     if not crafters or #crafters == 0 then return end
     local names = {}

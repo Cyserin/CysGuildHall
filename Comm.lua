@@ -8,6 +8,7 @@
 --   L  list:  one profession's full recipe list (Gaps), cut the same way (0.3.13+)
 --   W / X     "where is recipe N learned?" and the answer (source text + trainers / vendors)
 --   N  someone looted a recipe item nobody in the guild knows (0.3.15+)
+--   T / C     raid prep targets and members' claims on them (0.3.16+, see Prep.lua)
 -- Whoever hears a hello and holds a newer entry sends it after a short random wait;
 -- if someone else starts sending the same entry first, the others stand down.
 -- Sends are throttled and wait while you are in combat.
@@ -177,6 +178,8 @@ function C.Hello(force)
     for pid, rev in pairs(GH.db.allRev) do
         if GH.db.allRecipes[pid] then items[#items + 1] = "@" .. GH.To36(pid) .. "=" .. GH.To36(rev) end
     end
+    -- raid prep targets + claims ("$=1" marks that we understand them)
+    if GH.Prep then GH.Prep.HelloItems(items) end
     table.sort(items)
     local msgs, cur = {}, {}
     local len = 0
@@ -284,6 +287,8 @@ local function Answer(sender, theirs)
             if GH.db.allRecipes[pid] and (theirs["@" .. GH.To36(pid)] or 0) < rev then C.SendList(pid, 6 + math.random() * 14) end
         end
     end
+    -- raid prep targets + claims, only to members who understand them
+    if GH.Prep then GH.Prep.Answer(theirs) end
     -- my reagent counts for requests I claimed (after the requests themselves)
     if GH.Mats then C_Timer.After(5 + math.random() * 3, GH.Mats.Resend) end
 end
@@ -323,6 +328,63 @@ local function OnRequest(text, sender, senderRealm)
             st = st, cr = cr ~= "" and InName(cr, senderRealm) or nil, rev = rev,
         })
     end
+end
+
+--------------------------------------------------------------------------------
+-- Raid prep (0.3.16+): "T~tid~item~count~by~at~state~rev~editor" and
+-- "C~tid~who~item~claimed~delivered~rev" (numbers base 36)
+--------------------------------------------------------------------------------
+local pendingT = {}   -- [tid] = rev waiting to be sent
+local pendingC = {}   -- [tid^who^item] = rev waiting to be sent
+
+function C.SendTarget(t, delay)
+    if not t or not t.id then return end
+    local id, rev = t.id, t.rev
+    if pendingT[id] and pendingT[id] >= rev then return end
+    pendingT[id] = rev
+    C_Timer.After(delay or 0, function()
+        if pendingT[id] ~= rev then return end
+        local cur = GH.Prep and GH.Prep.Get(id)
+        if not cur or cur.rev ~= rev then pendingT[id] = nil; return end
+        local text = table.concat({ "T", id, GH.To36(cur.it), GH.To36(cur.n), OutName(cur.by), GH.To36(cur.at),
+            cur.st, GH.To36(rev), OutName(cur.ed or cur.by) }, "~")
+        Push(text, function() return pendingT[id] == rev end, function() pendingT[id] = nil end)
+    end)
+end
+
+function C.SendClaim(tid, cl, delay)
+    if not tid or not cl or not cl.w then return end
+    local k = tid .. "^" .. cl.w .. "^" .. cl.i
+    local rev = cl.rev
+    if pendingC[k] and pendingC[k] >= rev then return end
+    pendingC[k] = rev
+    C_Timer.After(delay or 0, function()
+        if pendingC[k] ~= rev or cl.rev ~= rev then return end
+        local text = table.concat({ "C", tid, OutName(cl.w), GH.To36(cl.i), GH.To36(cl.a or 0), GH.To36(cl.d or 0), GH.To36(rev) }, "~")
+        Push(text, function() return pendingC[k] == rev end, function() pendingC[k] = nil end)
+    end)
+end
+
+local function OnTarget(text, sender, senderRealm)
+    local id, it, n, by, at, st, rev, ed = text:match("^T~([^~]+)~(%w+)~(%w+)~([^~]+)~(%w+)~(%a)~(%w+)~([^~]+)$")
+    rev = rev and GH.From36(rev)
+    if not rev or not GH.Prep then return end
+    if pendingT[id] and pendingT[id] <= rev then pendingT[id] = nil end
+    GH.Prep.ReceiveTarget({
+        id = id, it = GH.From36(it), n = GH.From36(n), by = InName(by, senderRealm), at = GH.From36(at),
+        st = st, rev = rev, ed = InName(ed, senderRealm),
+    }, sender)
+end
+
+local function OnClaim(text, sender, senderRealm)
+    local tid, w, it, a, d, rev = text:match("^C~([^~]+)~([^~]+)~(%w+)~(%w+)~(%w+)~(%w+)$")
+    rev = rev and GH.From36(rev)
+    if not rev or not GH.Prep then return end
+    local cl = { w = InName(w, senderRealm), i = GH.From36(it), a = GH.From36(a) or 0, d = GH.From36(d) or 0, rev = rev }
+    if not cl.i then return end
+    local k = tid .. "^" .. cl.w .. "^" .. cl.i
+    if pendingC[k] and pendingC[k] <= rev then pendingC[k] = nil end
+    GH.Prep.ReceiveClaim(tid, cl, sender)
 end
 
 --------------------------------------------------------------------------------
@@ -541,7 +603,7 @@ local function OnHello(text, sender, senderRealm)
     end
     for nm, rev36 in body:gmatch("([^,=]+)=(%w+)") do
         local first = nm:sub(1, 1)
-        local key = (first == "#" or first == "@") and nm or InName(nm, senderRealm)
+        local key = (first == "#" or first == "@" or first == "$" or first == "%") and nm or InName(nm, senderRealm)
         h.list[key] = GH.From36(rev36) or 0
     end
     if last == "1" then
@@ -572,6 +634,10 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         local id, name = text:match("^N~(%w+)~(.+)$")
         id = id and GH.From36(id)
         if id then GH.Fire("LOOTED", sender, id, name) end
+    elseif kind == "T" then
+        OnTarget(text, sender, senderRealm)
+    elseif kind == "C" then
+        OnClaim(text, sender, senderRealm)
     elseif kind == "Q" then
         local id, dl = text:match("^Q~([^~]+)~(%a)$")
         if id and GH.Requests then GH.Requests.SetDelivery(id, dl) end

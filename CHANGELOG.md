@@ -2,6 +2,14 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 0.3.16
+- **Raid Prep tab** (`/guildhall prep`): officers set guild targets, an item and how many the guild needs (shift-click an item or type its name), change the count or remove a target. Only officer ranks can set targets.
+- **Parts**: each target lists the item itself plus the materials from its recipe, with how many the whole target takes.
+- **Claims**: crafters claim how many they will make, gatherers claim an amount of a material; everyone keeps their own Delivered number up to date (or presses All in). Progress bar with made / claimed / needed.
+- **Who is on it**: each part lists who claimed how much and what they delivered; gatherers see which crafters to send materials to.
+- Pop-up + chat note when an officer sets a new target, a pop-up when a target is done; item tooltips show raid prep progress on target items and their materials.
+- A long guild name in the window title no longer runs under the tabs.
+
 ## 0.3.15
 - **Not learned in the guild**: recipe items (Pattern, Plans, Recipe, Formula, Schematic...) show this line on their tooltip when nobody in the guild has learned that recipe yet.
 - **Looted recipe pop-up**: loot a recipe nobody in the guild knows and every guildmate with the Guild Hall gets a pop-up; click it to open the Gaps tab. Options switch "Tell the guild when you loot a recipe nobody knows".
