@@ -1,0 +1,77 @@
+name: Release
+
+# How a release happens (same setup as Cys's UI):
+#   1. You push to main. If the Version in CysGuildHall.toc has no GitHub release yet, the "check"
+#      job tags the commit (v0.3.17) and starts this workflow again on that tag.
+#   2. The run on the tag ("release" job) takes that version's notes from CHANGELOG.md, builds the
+#      zip and uploads it to CurseForge and a GitHub release.
+# Pushes that keep the same version release nothing.
+# To redo a release by hand: Actions > Release > Run workflow > Tags > pick the tag.
+#
+# Needs the repository secret CF_API_KEY (CurseForge > My API Tokens).
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Tag a new version and start its release
+        run: |
+          v=$(grep -m1 '^## Version:' CysGuildHall.toc | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')
+          tag="v$v"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag is already released - nothing to do. Raise the Version in CysGuildHall.toc to release."
+            exit 0
+          fi
+          if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "Cys's Guild Hall $tag"
+            git push origin "$tag"
+          fi
+          gh workflow run release.yml --ref "$tag"
+          echo "Started the release run for $tag"
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          v=$(grep -m1 '^## Version:' CysGuildHall.toc | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')
+          awk -v v="$v" '
+            /^## / { if (on) exit; if ($2 == v) { on = 1; print "## Cys'"'"'s Guild Hall " v; next } }
+            on { print }
+          ' CHANGELOG.md | tr -d '\r' > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            printf "## Cys's Guild Hall %s\n\nSee CHANGELOG.md.\n" "$v" > RELEASE_NOTES.md
+          fi
+          cat RELEASE_NOTES.md
+
+      - name: Build and upload (CurseForge + GitHub release)
+        uses: BigWigsMods/packager@v2
+        env:
+          GITHUB_OAUTH: ${{ github.token }}
+        with:
+          args: -n "{package-name}-{project-version}:Cys's Guild Hall {project-version}"
