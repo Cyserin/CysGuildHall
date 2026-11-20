@@ -6,6 +6,9 @@ All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 - **Not learned in the guild**: recipe items (Pattern, Plans, Recipe, Formula, Schematic...) show this line on their tooltip when nobody in the guild has learned that recipe yet.
 - **Looted recipe pop-up**: loot a recipe nobody in the guild knows and every guildmate with the Guild Hall gets a pop-up; click it to open the Gaps tab. Options switch "Tell the guild when you loot a recipe nobody knows".
 - **Request pop-up**: a new craft request pops up for the guildmates who can make it (only them); click it to open the Requests tab.
+- **Gaps source filter**: a dropdown at the end of the search box on the Gaps tab shows only recipes learned from a Trainer, Vendor, Drop, Quest or Other. Profession counts follow the filter.
+- **Change delivery**: on your own active request, a delivery dropdown switches between mail and trade. The crafter gets a chat note.
+- New requests pick mail or trade from a dropdown (was a click-to-switch button).
 
 ## 0.3.14
 - Guild news pop-ups: smaller text that wraps onto a second line, so the whole note shows instead of being cut off.

@@ -16,6 +16,11 @@ WN.ENTRIES = {
             "Recipe items show Not learned in the guild on their tooltip when nobody in the guild has learned that recipe yet (bags, loot, the Auction House and chat links).",
             "Loot a recipe nobody in the guild knows and the guild gets a pop-up about it. Switch on the Options tab.",
             "Request pop-up: when a guildmate asks for something you can make, a pop-up shows who asked and what. Only crafters who know that recipe see it. Click it to open the Requests tab.",
+            "Gaps tab source filter: a dropdown at the end of the search box shows only recipes learned from a Trainer, Vendor, Drop, Quest or Other.",
+            "Change delivery on your own open request with the delivery dropdown next to the request details. The crafter gets a chat note about the change.",
+        },
+        improved = {
+            "Picking mail or trade for a new request is now a dropdown instead of a button you click to switch.",
         },
     },
     { version = "0.3.14",

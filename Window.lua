@@ -181,7 +181,19 @@ function I.SourceKind(src)
     return plain:match("^%s*([^:|\n]-)%s*:")
 end
 
-function I.Gaps(pid, q, catKey)
+-- Gaps source filter: where a recipe is learned (Other = anything else, or not known yet)
+I.SRC_FILTERS = { "Trainer", "Vendor", "Drop", "Quest", "Other" }
+function I.SourceBucket(kind)
+    if type(kind) ~= "string" then return "Other" end
+    local k = kind:lower()
+    if k:find("trainer", 1, true) then return "Trainer" end
+    if k:find("vendor", 1, true) or k:find("quartermaster", 1, true) then return "Vendor" end
+    if k:find("quest", 1, true) then return "Quest" end
+    if k:find("drop", 1, true) then return "Drop" end
+    return "Other"
+end
+
+function I.Gaps(pid, q, catKey, srcF)
     I.Build()
     q = q and q:lower() or ""
     local pids = {}
@@ -196,8 +208,11 @@ function I.Gaps(pid, q, catKey)
                 local gr, ca = I.Category(id)
                 local inCat = not catKey or (gr .. ">" .. ca) == catKey
                 if inCat and (q == "" or name:lower():find(q, 1, true) or (c and c.n and c.n:lower():find(q, 1, true))) then
-                    out[#out + 1] = { kind = "recipe", id = id, name = name, crafters = 0, online = 0, group = gr, cat = ca, gap = true,
-                        src = GH.Prof.SourceKind(c) or I.SourceKind(c and c.src) }
+                    local src = GH.Prof.SourceKind(c) or I.SourceKind(c and c.src)
+                    if not srcF or I.SourceBucket(src) == srcF then
+                        out[#out + 1] = { kind = "recipe", id = id, name = name, crafters = 0, online = 0, group = gr, cat = ca, gap = true,
+                            src = src }
+                    end
                 end
             end
         end
@@ -210,9 +225,9 @@ function I.Gaps(pid, q, catKey)
 end
 
 -- Item types of one profession's unknown recipes, like I.Categories
-function I.GapCategories(pid)
+function I.GapCategories(pid, srcF)
     local counts, out = {}, {}
-    for _, r in ipairs(I.Gaps(pid)) do
+    for _, r in ipairs(I.Gaps(pid, nil, nil, srcF)) do
         local key = r.group .. ">" .. r.cat
         local e = counts[key]
         if not e then
@@ -229,7 +244,8 @@ function I.GapCategories(pid)
     return out
 end
 
-function I.GapCount(pid)
+function I.GapCount(pid, srcF)
+    if srcF then return #I.Gaps(pid, nil, nil, srcF) end
     I.Build()
     local n = 0
     for _, id in ipairs(GH.db.allRecipes[pid] or {}) do if not byRecipe[id] and not I.IsBoP(id) then n = n + 1 end end
@@ -495,15 +511,15 @@ local function Rebuild()
         PaintOptions()
     elseif state.tab == "gaps" then
         if state.query ~= "" then
-            for _, r in ipairs(I.Gaps(nil, state.query)) do list[#list + 1] = r end
+            for _, r in ipairs(I.Gaps(nil, state.query, nil, state.gapSrc)) do list[#list + 1] = r end
         elseif state.gapProf and state.gapCat then
             list[1] = { kind = "back" }
-            for _, r in ipairs(I.Gaps(state.gapProf, nil, state.gapCat.key)) do list[#list + 1] = r end
+            for _, r in ipairs(I.Gaps(state.gapProf, nil, state.gapCat.key, state.gapSrc)) do list[#list + 1] = r end
         elseif state.gapProf then
             -- item types under their groups, like the Crafting tab
             list[1] = { kind = "back" }
             local lastGroup
-            for _, c in ipairs(I.GapCategories(state.gapProf)) do
+            for _, c in ipairs(I.GapCategories(state.gapProf, state.gapSrc)) do
                 if c.group ~= lastGroup then
                     lastGroup = c.group
                     list[#list + 1] = { kind = "group", name = c.group }
@@ -519,9 +535,12 @@ local function Rebuild()
                 local pr = I.ProfInfo(pid)
                 local name = GH.ProfName(pid)
                 if GH.db.allRecipes[pid] then
-                    local n = I.GapCount(pid)
-                    open[#open + 1] = { kind = "gapprof", pid = pid, name = name,
-                        right = n == 0 and "|cff4fd66ball known|r" or ("%d of %d"):format(n, #GH.db.allRecipes[pid]) }
+                    local n = I.GapCount(pid, state.gapSrc)
+                    local right
+                    if n > 0 then right = ("%d of %d"):format(n, #GH.db.allRecipes[pid])
+                    elseif state.gapSrc then right = "none"
+                    else right = "|cff4fd66ball known|r" end
+                    open[#open + 1] = { kind = "gapprof", pid = pid, name = name, right = right }
                 elseif not pr then
                     none[#none + 1] = { kind = "gapnone", pid = pid, name = name, right = "|cffff4040nobody|r" }
                 else
@@ -735,6 +754,8 @@ function Paint()
         frame.empty:SetText("")
     elseif state.tab == "gaps" and state.query ~= "" and n == 0 then
         frame.empty:SetText("No unknown recipes match.")
+    elseif state.tab == "gaps" and state.gapProf and n <= 1 and state.gapSrc then
+        frame.empty:SetText("No unknown " .. GH.ProfName(state.gapProf) .. " recipes from: " .. state.gapSrc .. ".\n\nThe source dropdown next to the search box changes this.")
     elseif state.tab == "gaps" and state.gapProf and n <= 1 then
         frame.empty:SetText("Someone in the guild knows every " .. GH.ProfName(state.gapProf) .. " recipe.")
     elseif state.tab == "gaps" then
@@ -797,12 +818,22 @@ function PaintDetail()
     local pid = c.p or (crafters[1] and crafters[1].pid)
     local sub = pid and GH.ProfName(pid) or ""
     if (c.q or 1) > 1 then sub = sub .. ("  -  makes %d"):format(c.q) end
+    local canSwitch = req and req.by == GH.Me() and GH.Requests.IsActive(req) and true or false
     if req then
         sub = ("Requested by %s, %s"):format(GH.Short(req.by), Ago(req.at))
         local dl = GH.Requests.DeliveryText(req)
-        if dl then sub = sub .. " - " .. dl end
+        if dl and not canSwitch then sub = sub .. " - " .. dl end
     end
     d.sub:SetText(sub)
+    d.dlDrop:SetShown(canSwitch)
+    d.sub:ClearAllPoints()
+    d.sub:SetPoint("TOPLEFT", d.name, "BOTTOMLEFT", 0, -4)
+    if canSwitch then
+        d.dlDrop:Refresh()
+        d.sub:SetPoint("RIGHT", d.dlDrop, "LEFT", -8, 0)
+    else
+        d.sub:SetPoint("RIGHT", d.box, "RIGHT", -12, 0)
+    end
 
     -- crafters
     for i = 1, CRAFTER_ROWS do
@@ -898,6 +929,7 @@ function PaintDetail()
 
     -- action strip
     d.btnB.tip = nil
+    d.newDl:Hide()
     if req then
         local text, col = GH.Requests.StateText(req)
         local cc = T[col] or T.text
@@ -922,13 +954,17 @@ function PaintDetail()
                 SetTab("requests")
             end
         end } or nil)
-        -- delivery choice: click to switch between mail and trade (remembered)
-        SetButton(d.btnB, GH.Guild() and { GH.Requests.DELIVERY[set.delivery] or GH.Requests.DELIVERY.m, function()
-            set.delivery = (set.delivery == "t") and "m" or "t"
-            PaintDetail()
-        end } or nil)
-        d.btnB.tip = GH.Guild() and "How you want it delivered. Click to switch." or nil
+        -- delivery choice: dropdown (remembered)
+        SetButton(d.btnB, nil)
+        if GH.Guild() then
+            if not GH.Requests.DELIVERY[set.delivery] then set.delivery = "m" end
+            d.newDl:Show()
+            d.newDl:Refresh()
+        end
     end
+    d.actText:ClearAllPoints()
+    d.actText:SetPoint("LEFT")
+    d.actText:SetPoint("RIGHT", d.newDl:IsShown() and d.newDl or d.btnB, "LEFT", -8, 0)
 end
 
 --------------------------------------------------------------------------------
@@ -951,6 +987,8 @@ function SetTab(tab)
     state.offset = 0
     if tab == "craft" or tab == "gaps" then state.req = nil end
     frame.options:SetShown(tab == "options")
+    frame.srcBtn:SetShown(tab == "gaps")
+    frame.search:SetTextInsets(6, tab == "gaps" and (frame.srcBtn:GetWidth() + 10) or 6, 0, 0)
     if tab == "options" then frame.search:ClearFocus() end
     if frame.search:GetText() ~= "" then
         frame.search:SetText("")   -- rebuilds through OnTextChanged
@@ -1199,6 +1237,27 @@ local function Build()
     end)
     frame.search = search
 
+    -- Gaps: source filter dropdown at the right end of the search box
+    local srcBtn = S.Dropdown(search, 96, 18, function()
+        local list = { { "all", "All sources" } }
+        for _, k in ipairs(I.SRC_FILTERS) do list[#list + 1] = { k, k } end
+        return list
+    end, function() return state.gapSrc or "all" end, function(v)
+        state.gapSrc = (v ~= "all") and v or nil
+        state.offset = 0
+        Rebuild()
+    end)
+    srcBtn:SetPoint("RIGHT", search, "RIGHT", -3, 0)
+    srcBtn:HookScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("Where to learn it", 1, 1, 1)
+        GameTooltip:AddLine("Show only recipes learned from this source.", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:Show()
+    end)
+    srcBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    srcBtn:Hide()
+    frame.srcBtn = srcBtn
+
     -- list
     local listBox = S.Panel(frame, T.field)
     listBox:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -6)
@@ -1278,6 +1337,23 @@ local function Build()
     d.name:SetWordWrap(false)
     d.sub = S.Text(inner, 11, SOFT)
     d.sub:SetPoint("TOPLEFT", d.name, "BOTTOMLEFT", 0, -4)
+    d.sub:SetWordWrap(false)
+    -- requester only: delivery dropdown (mail / trade) on an active request
+    d.dlDrop = S.Dropdown(inner, 124, 18, function() return { { "m", GH.Requests.DELIVERY.m }, { "t", GH.Requests.DELIVERY.t } } end, function()
+        local r = state.req and GH.Requests.Get(state.req)
+        return r and r.dl
+    end, function(v)
+        if state.req then GH.Requests.ChangeDelivery(state.req, v) end
+    end)
+    d.dlDrop.placeholder = "Delivery"
+    d.dlDrop:SetPoint("TOPRIGHT", inner, "TOPRIGHT", -12, -32)
+    d.dlDrop:HookScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("How you want it delivered. The crafter sees a change.", 1, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    d.dlDrop:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    d.dlDrop:Hide()
 
     local cLabel = Label(inner, "Can make it")
     cLabel:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -12)
@@ -1376,6 +1452,17 @@ local function Build()
         GameTooltip:Show()
     end)
     d.btnB:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    -- new request: delivery dropdown (remembered), sits where btnB would
+    d.newDl = S.Dropdown(strip, 124, 22, function() return { { "m", GH.Requests.DELIVERY.m }, { "t", GH.Requests.DELIVERY.t } } end, function() return GH.db.settings.delivery end,
+        function(v) GH.db.settings.delivery = v end)
+    d.newDl:SetPoint("RIGHT", d.btnA, "LEFT", -6, 0)
+    d.newDl:HookScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("How you want it delivered (remembered for next time).", 1, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    d.newDl:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    d.newDl:Hide()
     d.actText = S.Text(strip, 11, T.dim)
     d.actText:SetPoint("LEFT")
     d.actText:SetPoint("RIGHT", d.btnB, "LEFT", -8, 0)

@@ -170,8 +170,23 @@ function R.SetDelivery(id, dl)
     local r = R.Get(id)
     if not r then dlWaiting[id] = dl; return end
     if r.dl == dl then return end
+    local old = r.dl
     r.dl = dl
     GH.Fire("REQUESTS", id)
+    -- the requester switched delivery on a request you claimed
+    if old and r.cr == GH.Me() and r.by ~= r.cr and R.IsActive(r) and GH.db.settings.notify then
+        local name = GH.Index and GH.Index.RecipeName(r.rc) or ("recipe " .. r.rc)
+        GH.Print(("%s changed delivery for %dx %s: now %s."):format(GH.Short(r.by), r.n, name, R.DeliveryText(r) or R.DELIVERY[dl]))
+    end
+end
+
+-- Requester switches delivery on an active request (a new revision so the change reaches everyone)
+function R.ChangeDelivery(id, dl)
+    local r = R.Get(id)
+    if not r or r.by ~= GH.Me() or not R.IsActive(r) or not R.DELIVERY[dl] or r.dl == dl then return end
+    r.dl = dl
+    r.rev = math.max(GetServerTime(), (r.rev or 0) + 1)
+    Changed(r)
 end
 
 function R.Receive(r)

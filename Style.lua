@@ -206,3 +206,116 @@ function S.MoneyInput(parent)
     function m:ClearFocus() for _, e in ipairs(boxes) do e:ClearFocus() end end
     return m
 end
+
+--------------------------------------------------------------------------------
+-- Dropdown: items() -> { { value, text }, ... }; get() -> value; set(value).
+-- Click opens the list under the button; picking, clicking elsewhere or hiding
+-- the button closes it. b:Refresh() repaints the label. b.placeholder = text when
+-- the current value is not in the list.
+--------------------------------------------------------------------------------
+local menu, catcher
+local MENU_ROW = 20
+
+local function CloseMenu()
+    if menu then menu:Hide(); menu.owner = nil end
+    if catcher then catcher:Hide() end
+end
+S.CloseMenu = CloseMenu
+
+local function OpenMenu(owner)
+    local T = S.T()
+    if not menu then
+        catcher = CreateFrame("Button", nil, UIParent)
+        catcher:SetAllPoints(UIParent)
+        catcher:SetFrameStrata("FULLSCREEN_DIALOG")
+        catcher:RegisterForClicks("AnyUp")
+        catcher:SetScript("OnClick", CloseMenu)
+        menu = CreateFrame("Frame", nil, UIParent)
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetFrameLevel(catcher:GetFrameLevel() + 10)
+        menu:SetClampedToScreen(true)
+        S.Tex(menu, "BACKGROUND", T.bg):SetAllPoints()
+        S.Border(menu, T.border)
+        menu.rows = {}
+    end
+    local items = owner.items() or {}
+    local cur = owner.get()
+    local widest = 0
+    for i, it in ipairs(items) do
+        local r = menu.rows[i]
+        if not r then
+            r = CreateFrame("Button", nil, menu)
+            r:SetHeight(MENU_ROW)
+            r.hl = S.Tex(r, "BACKGROUND", T.cardHover)
+            r.hl:SetAllPoints()
+            r.hl:Hide()
+            r.mark = S.Tex(r, "ARTWORK", T.accent)
+            r.mark:SetSize(5, 5)
+            r.mark:SetPoint("LEFT", 8, 0)
+            r.text = S.Text(r, 11, T.text)
+            r.text:SetPoint("LEFT", 20, 0)
+            r.text:SetWordWrap(false)
+            r:SetScript("OnEnter", function(s) s.hl:Show() end)
+            r:SetScript("OnLeave", function(s) s.hl:Hide() end)
+            r:SetScript("OnClick", function(s)
+                local o = menu.owner
+                CloseMenu()
+                if o then
+                    o.set(s.value)
+                    o:Refresh()
+                end
+            end)
+            menu.rows[i] = r
+        end
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", 1, -1 - (i - 1) * MENU_ROW)
+        r:SetPoint("TOPRIGHT", -1, -1 - (i - 1) * MENU_ROW)
+        r.value = it[1]
+        r.text:SetText(it[2])
+        local on = it[1] == cur
+        r.mark:SetShown(on)
+        local c = on and T.accent or T.text
+        r.text:SetTextColor(c[1], c[2], c[3])
+        widest = math.max(widest, r.text:GetStringWidth())
+        r:Show()
+    end
+    for i = #items + 1, #menu.rows do menu.rows[i]:Hide() end
+    menu:SetSize(math.max(owner:GetWidth(), widest + 30), #items * MENU_ROW + 2)
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -2)
+    menu.owner = owner
+    catcher:Show()
+    menu:Show()
+end
+
+function S.Dropdown(parent, w, h, items, get, set)
+    local T = S.T()
+    local b = S.Button(parent, w, h, "")
+    b.items, b.get, b.set = items, get, set
+    b.label:ClearAllPoints()
+    b.label:SetPoint("LEFT", 7, 0)
+    b.label:SetPoint("RIGHT", -18, 0)
+    b.label:SetJustifyH("LEFT")
+    b.label:SetWordWrap(false)
+    -- small gold chevron, drawn from two lines
+    for i, side in ipairs({ -1, 1 }) do
+        local l = b:CreateTexture(nil, "ARTWORK")
+        l:SetColorTexture(T.accent[1], T.accent[2], T.accent[3], 1)
+        l:SetSize(5, 1.5)
+        l:SetPoint("CENTER", b, "RIGHT", -10 + side * 1.6, 0)
+        l:SetRotation(side * -math.pi / 4)
+    end
+    function b:Refresh()
+        local cur = self.get()
+        for _, it in ipairs(self.items() or {}) do
+            if it[1] == cur then self:SetLabel(it[2]); return end
+        end
+        self:SetLabel(self.placeholder or "")
+    end
+    b:SetScript("OnClick", function(s)
+        if menu and menu:IsShown() and menu.owner == s then CloseMenu() else OpenMenu(s) end
+    end)
+    b:HookScript("OnHide", function(s) if menu and menu.owner == s then CloseMenu() end end)
+    b:Refresh()
+    return b
+end
