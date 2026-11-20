@@ -331,8 +331,9 @@ local function OnRequest(text, sender, senderRealm)
 end
 
 --------------------------------------------------------------------------------
--- Raid prep (0.3.16+): "T~tid~item~count~by~at~state~rev~editor" and
--- "C~tid~who~item~claimed~delivered~rev" (numbers base 36)
+-- Raid prep (0.3.16+): "T~tid~item~count~by~at~state~rev~editor~handin" and
+-- "C~tid~who~item~claimed~delivered~rev~made" (numbers base 36; hand-in b = guild bank,
+-- s = the officer who set it, else a name; the last field of each may be missing)
 --------------------------------------------------------------------------------
 local pendingT = {}   -- [tid] = rev waiting to be sent
 local pendingC = {}   -- [tid^who^item] = rev waiting to be sent
@@ -347,7 +348,8 @@ function C.SendTarget(t, delay)
         local cur = GH.Prep and GH.Prep.Get(id)
         if not cur or cur.rev ~= rev then pendingT[id] = nil; return end
         local text = table.concat({ "T", id, GH.To36(cur.it), GH.To36(cur.n), OutName(cur.by), GH.To36(cur.at),
-            cur.st, GH.To36(rev), OutName(cur.ed or cur.by) }, "~")
+            cur.st, GH.To36(rev), OutName(cur.ed or cur.by),
+            (cur.to == "b" or cur.to == "s" or not cur.to) and (cur.to or "s") or OutName(cur.to) }, "~")
         Push(text, function() return pendingT[id] == rev end, function() pendingT[id] = nil end)
     end)
 end
@@ -360,27 +362,29 @@ function C.SendClaim(tid, cl, delay)
     pendingC[k] = rev
     C_Timer.After(delay or 0, function()
         if pendingC[k] ~= rev or cl.rev ~= rev then return end
-        local text = table.concat({ "C", tid, OutName(cl.w), GH.To36(cl.i), GH.To36(cl.a or 0), GH.To36(cl.d or 0), GH.To36(rev) }, "~")
+        local text = table.concat({ "C", tid, OutName(cl.w), GH.To36(cl.i), GH.To36(cl.a or 0), GH.To36(cl.d or 0), GH.To36(rev), GH.To36(cl.m or 0) }, "~")
         Push(text, function() return pendingC[k] == rev end, function() pendingC[k] = nil end)
     end)
 end
 
 local function OnTarget(text, sender, senderRealm)
-    local id, it, n, by, at, st, rev, ed = text:match("^T~([^~]+)~(%w+)~(%w+)~([^~]+)~(%w+)~(%a)~(%w+)~([^~]+)$")
+    local id, it, n, by, at, st, rev, ed, to = text:match("^T~([^~]+)~(%w+)~(%w+)~([^~]+)~(%w+)~(%a)~(%w+)~([^~]+)~?([^~]*)$")
+    if to == "" or to == "s" then to = "s" elseif to ~= "b" and to then to = InName(to, senderRealm) end
     rev = rev and GH.From36(rev)
     if not rev or not GH.Prep then return end
     if pendingT[id] and pendingT[id] <= rev then pendingT[id] = nil end
     GH.Prep.ReceiveTarget({
         id = id, it = GH.From36(it), n = GH.From36(n), by = InName(by, senderRealm), at = GH.From36(at),
-        st = st, rev = rev, ed = InName(ed, senderRealm),
+        st = st, rev = rev, ed = InName(ed, senderRealm), to = to,
     }, sender)
 end
 
 local function OnClaim(text, sender, senderRealm)
-    local tid, w, it, a, d, rev = text:match("^C~([^~]+)~([^~]+)~(%w+)~(%w+)~(%w+)~(%w+)$")
+    local tid, w, it, a, d, rev, m = text:match("^C~([^~]+)~([^~]+)~(%w+)~(%w+)~(%w+)~(%w+)~?(%w*)$")
     rev = rev and GH.From36(rev)
     if not rev or not GH.Prep then return end
-    local cl = { w = InName(w, senderRealm), i = GH.From36(it), a = GH.From36(a) or 0, d = GH.From36(d) or 0, rev = rev }
+    local cl = { w = InName(w, senderRealm), i = GH.From36(it), a = GH.From36(a) or 0, d = GH.From36(d) or 0,
+        m = m ~= "" and GH.From36(m) or 0, rev = rev }
     if not cl.i then return end
     local k = tid .. "^" .. cl.w .. "^" .. cl.i
     if pendingC[k] and pendingC[k] <= rev then pendingC[k] = nil end

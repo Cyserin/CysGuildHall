@@ -2,7 +2,7 @@
 -- Cys's Guild Hall - Raid Prep tab
 -- Left: the guild's targets (officers add new ones at the bottom).
 -- Right: the picked target: progress, its parts (the item + its materials),
--- who is on the picked part, and your own claim / delivered numbers.
+-- who is on the picked part, and your own claim / made / delivered numbers.
 --------------------------------------------------------------------------------
 local GH = CysGuildHall
 local S = GH.Style
@@ -112,7 +112,17 @@ local function AddTarget()
         return
     end
     if n < 1 then GH.Print("set how many the guild needs.") return end
-    local t = GH.Prep.New(id, n)
+    local to = GH.db.settings.prepTo or "s"
+    if to == "r" then
+        local name = (panel.toName:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if name == "" then GH.Print("type the raider's name (First Last) for the hand-in.") return end
+        if not name:find("-", 1, true) then
+            local first, last = name:match("^(%S+)%s+(%S+)$")
+            name = first and (first .. "-" .. last) or GH.Canon(name)
+        end
+        to = name
+    end
+    local t = GH.Prep.New(id, n, to)
     if t then
         panel.itemBox:SetText("")
         panel.itemBox.linkID, panel.itemBox.linkName = nil, nil
@@ -149,7 +159,7 @@ local function PaintList(list)
             row:Show()
             row.icon:SetTexture(Icon(t.it))
             row.text:SetText(QualityName(t.it))
-            local done = t._made >= t.n
+            local done = t._deliv >= t.n
             if done then
                 row.right:SetText("|cff4fd66bdone|r")
             else
@@ -202,13 +212,14 @@ local function PaintDetail(t)
     d.barMade:SetWidth(math.max(0.01, w * made / t.n))
     d.barClaim:SetShown(claimed > 0)
     d.barMade:SetShown(made > 0)
-    if main.made >= t.n then
-        d.progress:SetText(("|cff4fd66bComplete: %d / %d|r"):format(main.made, t.n))
+    local dash = "  |cff" .. Hex(SOFT[1], SOFT[2], SOFT[3]) .. "-|r  "
+    if main.deliv >= t.n then
+        d.progress:SetText(("|cff4fd66bComplete: %d / %d handed in|r"):format(main.deliv, t.n))
     else
-        local verb = main.kind == "craft" and "made" or "brought in"
-        d.progress:SetText(("%d %s  |cff%s-|r  %d claimed  |cff%s-|r  %d needed"):format(main.made, verb, Hex(SOFT[1], SOFT[2], SOFT[3]), main.claimed,
-            Hex(SOFT[1], SOFT[2], SOFT[3]), t.n))
+        local verb = main.kind == "craft" and "made" or "brought"
+        d.progress:SetText(("%d %s" .. dash .. "%d handed in" .. dash .. "%d claimed" .. dash .. "%d needed"):format(main.made, verb, main.deliv, main.claimed, t.n))
     end
+    d.handIn:SetText("Hand in: |cffffffff" .. GH.Prep.HandInText(t) .. "|r")
 
     -- parts
     for i = 1, PART_ROWS do
@@ -221,7 +232,7 @@ local function PaintDetail(t)
             local kind = p.kind == "craft" and "Craft" or p.kind == "bring" and "Bring" or "Gather"
             row.kind:SetText(kind)
             row.text:SetText(QualityName(p.item))
-            if p.made >= p.need then
+            if (i == 1 and p.deliv or p.made) >= p.need then
                 row.right:SetText(("|cff4fd66b%d / %d|r"):format(p.made, p.need))
             elseif p.claimed > p.made then
                 row.right:SetText(("%d / %d  |cff%s(%d claimed)|r"):format(p.made, p.need, Hex(SOFT[1], SOFT[2], SOFT[3]), p.claimed))
@@ -247,11 +258,13 @@ local function PaintDetail(t)
             local r, g, b = 0.55, 0.55, 0.55
             if GH.IsOnline(cl.w) or cl.w == GH.Me() then r, g, b = GH.ClassColor(cl.w) end
             row.text:SetText("|cff" .. Hex(r, g, b) .. GH.Short(cl.w) .. "|r")
-            local a, dl = cl.a or 0, cl.d or 0
+            local a, dl, m = cl.a or 0, cl.d or 0, math.max(cl.m or 0, cl.d or 0)
+            local dash = "  |cff" .. Hex(SOFT[1], SOFT[2], SOFT[3]) .. "-|r  "
+            local verb = focus.kind == "gather" and "gathered" or "made"
             if a > 0 and dl >= a then
-                row.right:SetText(("|cff4fd66b%d delivered|r"):format(dl))
+                row.right:SetText(("|cff4fd66b%d handed in|r"):format(dl))
             else
-                row.right:SetText(("%d claimed  |cff%s-|r  %d delivered"):format(math.max(a, dl), Hex(SOFT[1], SOFT[2], SOFT[3]), dl))
+                row.right:SetText(("%d claimed" .. dash .. "%d %s" .. dash .. "%d handed in"):format(math.max(a, m), m, verb, dl))
             end
         else
             row:Hide()
@@ -264,15 +277,17 @@ local function PaintDetail(t)
     local can = not (focus.kind == "craft" and not GH.Prep.ICanMake(focus.item))
     local mine = GH.Prep.MyClaim(t.id, focus.item)
     d.claim:SetNumber(mine and mine.a or 0)
+    d.made:SetNumber(mine and math.max(mine.m or 0, mine.d or 0) or 0)
     d.deliv:SetNumber(mine and mine.d or 0)
-    for _, b in ipairs({ d.claim, d.deliv }) do
+    d.madeLabel:SetText(focus.kind == "gather" and "Gathered" or "Made")
+    for _, b in ipairs({ d.claim, d.made, d.deliv }) do
         b:EnableMouse(can)
         b:SetAlpha(can and 1 or 0.45)
         if not can then b:ClearFocus() end
     end
-    d.allDone:SetActive(can and mine ~= nil and (mine.a or 0) > (mine.d or 0))
+    d.allDone:SetActive(can and mine ~= nil and math.max(mine.a or 0, mine.m or 0) > (mine.d or 0))
     -- Claim button: take whatever is still open on this part (others' claims left alone)
-    local myPart = mine and math.max(mine.a or 0, mine.d or 0) or 0
+    local myPart = mine and math.max(mine.a or 0, mine.d or 0, mine.m or 0) or 0
     local open = focus.need - (focus.claimed - myPart)
     d.claimRest.to = (can and open > myPart) and open or nil
     d.claimRest:SetShown(d.claimRest.to ~= nil)
@@ -282,7 +297,10 @@ local function PaintDetail(t)
         note = "You can't craft this - pick a material above to gather."
     else
         note = ("You carry %d."):format(Count(focus.item))
-        if focus.kind == "gather" then
+        if focus.kind ~= "gather" then
+            local kind = GH.Prep.HandIn(t)
+            note = note .. (kind == "bank" and " Put them in the guild bank." or (" Send to " .. GH.Prep.HandInText(t) .. "."))
+        else
             local crafters = {}
             for _, cl in ipairs(GH.Prep.ClaimsOn(t.id, t.it)) do crafters[#crafters + 1] = GH.Short(cl.w) end
             if #crafters > 0 then note = note .. " Send to: " .. table.concat(crafters, ", ") .. "." end
@@ -400,7 +418,7 @@ function UI.Build(frame)
     -- new target (officers)
     local add = CreateFrame("Frame", nil, panel)
     add:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, -10)
-    add:SetSize(300, 60)
+    add:SetSize(300, 70)
     panel.addBox = add
     local al = Label(add, "New target")
     al:SetPoint("TOPLEFT", 2, 0)
@@ -430,10 +448,30 @@ function UI.Build(frame)
     local addBtn = S.Button(add, 52, 22, "Add")
     addBtn:SetPoint("LEFT", count, "RIGHT", 4, 0)
     addBtn:SetScript("OnClick", AddTarget)
-    local hint = S.Text(add, 10, SOFT)
-    hint:SetPoint("TOPLEFT", item, "BOTTOMLEFT", 2, -5)
-    hint:SetWidth(296)
-    hint:SetText("Guildmates claim parts: crafters the item, gatherers its materials.")
+    local tl = S.Text(add, 11, SOFT)
+    tl:SetPoint("TOPLEFT", item, "BOTTOMLEFT", 2, -10)
+    tl:SetText("Hand in to")
+    local toName = S.EditBox(add, 116, 20)
+    toName.hint:SetText("First Last")
+    toName:SetScript("OnTextChanged", function(e) e.hint:SetShown(e:GetText() == "") end)
+    toName:SetScript("OnEnterPressed", function() AddTarget() end)
+    panel.toName = toName
+    local to = S.Dropdown(add, 110, 20, function()
+        return { { "s", "Me" }, { "b", "Guild bank" }, { "r", "A raider" } }
+    end, function() return GH.db.settings.prepTo or "s" end, function(v)
+        GH.db.settings.prepTo = v
+        toName:SetShown(v == "r")
+    end)
+    to:SetPoint("LEFT", tl, "RIGHT", 8, 0)
+    toName:SetPoint("LEFT", to, "RIGHT", 4, 0)
+    toName:SetShown((GH.db.settings.prepTo or "s") == "r")
+    to:HookScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("Where finished items go", 1, 1, 1)
+        GameTooltip:AddLine("Crafters see it on the target. Gatherers send materials to the crafters.", 0.84, 0.77, 0.62, true)
+        GameTooltip:Show()
+    end)
+    to:HookScript("OnLeave", function() GameTooltip:Hide() end)
     panel.notOfficer = S.Text(panel, 11, SOFT)
     panel.notOfficer:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 2, -12)
     panel.notOfficer:SetWidth(296)
@@ -510,8 +548,12 @@ function UI.Build(frame)
 
     local pl = Label(body, "Parts")
     pl:SetPoint("TOPLEFT", 10, -86)
-    d.partsMore = S.Text(body, 10, T.dim, "RIGHT")
-    d.partsMore:SetPoint("TOPRIGHT", -10, -87)
+    d.partsMore = S.Text(body, 10, T.dim)
+    d.partsMore:SetPoint("LEFT", pl, "RIGHT", 8, 0)
+    d.handIn = S.Text(body, 11, SOFT, "RIGHT")
+    d.handIn:SetPoint("TOPRIGHT", -10, -87)
+    d.handIn:SetWidth(220)
+    d.handIn:SetWordWrap(false)
     d.parts = {}
     for i = 1, PART_ROWS do
         local row = ListRow(body, PART_H)
@@ -589,33 +631,46 @@ function UI.Build(frame)
     d.yourNote:SetPoint("BOTTOMLEFT", 10, 38)
     d.yourNote:SetPoint("RIGHT", d.claimRest, "LEFT", -8, 0)
     d.yourNote:SetWordWrap(false)
-    local yl = Label(body, "Your part")
-    yl:SetPoint("BOTTOMLEFT", 10, 15)
-    local cl = S.Text(body, 11, T.text)
-    cl:SetPoint("LEFT", yl, "RIGHT", 12, 0)
-    cl:SetText("Claim")
-    d.claim = NumBox(body, 44, function(v)
+    local cl = Label(body, "Claim")
+    cl:SetPoint("BOTTOMLEFT", 10, 15)
+    d.claim = NumBox(body, 38, function(v)
         if state.sel and state.focus then GH.Prep.SetMine(state.sel, state.focus, v, nil) end
     end)
-    d.claim:SetPoint("LEFT", cl, "RIGHT", 6, 0)
+    d.claim:SetPoint("LEFT", cl, "RIGHT", 5, 0)
+    d.madeLabel = S.Text(body, 11, T.text)
+    d.madeLabel:SetPoint("LEFT", d.claim, "RIGHT", 8, 0)
+    d.madeLabel:SetText("Made")
+    d.made = NumBox(body, 38, function(v)
+        if state.sel and state.focus then GH.Prep.SetMine(state.sel, state.focus, nil, nil, v) end
+    end)
+    d.made:SetPoint("LEFT", d.madeLabel, "RIGHT", 5, 0)
+    d.made:HookScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("Made so far", 1, 1, 1)
+        GameTooltip:AddLine("Crafting this item counts here by itself, up to your claim. Gatherers type what they have gathered.", 0.84, 0.77, 0.62, true)
+        GameTooltip:Show()
+    end)
+    d.made:HookScript("OnLeave", function() GameTooltip:Hide() end)
     local dl = S.Text(body, 11, T.text)
-    dl:SetPoint("LEFT", d.claim, "RIGHT", 12, 0)
-    dl:SetText("Delivered")
-    d.deliv = NumBox(body, 44, function(v)
+    dl:SetPoint("LEFT", d.made, "RIGHT", 8, 0)
+    dl:SetText("Handed in")
+    d.deliv = NumBox(body, 38, function(v)
         if state.sel and state.focus then GH.Prep.SetMine(state.sel, state.focus, nil, v) end
     end)
-    d.deliv:SetPoint("LEFT", dl, "RIGHT", 6, 0)
-    d.allDone = S.Button(body, 64, 20, "All in")
+    d.deliv:SetPoint("LEFT", dl, "RIGHT", 5, 0)
+    d.allDone = S.Button(body, 56, 20, "All in")
     d.allDone:SetPoint("BOTTOMRIGHT", -10, 11)
     d.allDone:SetScript("OnClick", function()
         if not state.sel or not state.focus then return end
         local mine = GH.Prep.MyClaim(state.sel, state.focus)
-        if mine and (mine.a or 0) > (mine.d or 0) then GH.Prep.SetMine(state.sel, state.focus, nil, mine.a) end
+        local all = mine and math.max(mine.a or 0, mine.m or 0) or 0
+        if all > (mine and mine.d or 0) then GH.Prep.SetMine(state.sel, state.focus, nil, all) end
         UI.Paint()
     end)
     d.allDone:HookScript("OnEnter", function(s)
         GameTooltip:SetOwner(s, "ANCHOR_TOP")
-        GameTooltip:SetText("Mark everything you claimed as delivered", 1, 1, 1)
+        GameTooltip:SetText("Mark everything you claimed as handed in", 1, 1, 1)
+        GameTooltip:AddLine("Only updates the numbers: send or deposit the items yourself.", 0.84, 0.77, 0.62, true)
         GameTooltip:Show()
     end)
     d.allDone:HookScript("OnLeave", function() GameTooltip:Hide() end)

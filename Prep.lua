@@ -147,14 +147,16 @@ function P.Parts(t)
             parts[#parts + 1] = { item = rg[1], need = crafts * (rg[2] or 1), kind = "gather" }
         end
     end
-    for _, p in ipairs(parts) do p.made, p.claimed, p.people = 0, 0, 0 end
+    for _, p in ipairs(parts) do p.made, p.deliv, p.claimed, p.people = 0, 0, 0, 0 end
     local idx = {}
     for i, p in ipairs(parts) do idx[p.item] = idx[p.item] or i end
     for _, cl in pairs(Claims(t.id) or {}) do
         local p = idx[cl.i] and parts[idx[cl.i]]
-        if p and ((cl.a or 0) > 0 or (cl.d or 0) > 0) then
-            p.made = p.made + (cl.d or 0)
-            p.claimed = p.claimed + math.max(cl.a or 0, cl.d or 0)
+        if p and ((cl.a or 0) > 0 or (cl.d or 0) > 0 or (cl.m or 0) > 0) then
+            local m = math.max(cl.m or 0, cl.d or 0)
+            p.made = p.made + m
+            p.deliv = p.deliv + (cl.d or 0)
+            p.claimed = p.claimed + math.max(cl.a or 0, m)
             p.people = p.people + 1
         end
     end
@@ -165,10 +167,10 @@ end
 function P.ClaimsOn(tid, item)
     local out = {}
     for _, cl in pairs(Claims(tid) or {}) do
-        if cl.i == item and ((cl.a or 0) > 0 or (cl.d or 0) > 0) then out[#out + 1] = cl end
+        if cl.i == item and ((cl.a or 0) > 0 or (cl.d or 0) > 0 or (cl.m or 0) > 0) then out[#out + 1] = cl end
     end
     table.sort(out, function(a, b)
-        local x, y = math.max(a.a or 0, a.d or 0), math.max(b.a or 0, b.d or 0)
+        local x, y = math.max(a.a or 0, a.d or 0, a.m or 0), math.max(b.a or 0, b.d or 0, b.m or 0)
         if x ~= y then return x > y end
         return a.w < b.w
     end)
@@ -186,12 +188,12 @@ function P.All()
     for _, t in pairs(Targets() or {}) do
         if t.st == "a" then
             local parts = P.Parts(t)
-            t._made, t._claimed = parts[1].made, parts[1].claimed
+            t._made, t._claimed, t._deliv = parts[1].made, parts[1].claimed, parts[1].deliv
             out[#out + 1] = t
         end
     end
     table.sort(out, function(a, b)
-        local da, db = a._made >= a.n, b._made >= b.n
+        local da, db = a._deliv >= a.n, b._deliv >= b.n
         if da ~= db then return db end
         if a.at ~= b.at then return a.at > b.at end
         return a.id < b.id
@@ -212,14 +214,28 @@ local function ClaimChanged(tid, cl, delay)
     if GH.Comm and GH.Comm.SendClaim then GH.Comm.SendClaim(tid, cl, delay) end
 end
 
-function P.New(itemID, n)
+-- Where finished items go: "b" guild bank, "s" (or nil) the officer who set it, else a "First-Last" name
+function P.HandIn(t)
+    local to = t and t.to
+    if to == "b" then return "bank", nil end
+    if not to or to == "s" then return "person", t and t.by end
+    return "person", to
+end
+
+function P.HandInText(t)
+    local kind, who = P.HandIn(t)
+    if kind == "bank" then return "Guild bank" end
+    return who and GH.Short(who) or "?"
+end
+
+function P.New(itemID, n, to)
     local l = Targets()
     n = Clamp(n)
     if not l or not itemID or n < 1 or not P.IAmOfficer() then return nil end
     GH.db.reqSeq = ((GH.db.reqSeq or 0) + 1) % 1296
     local now = GetServerTime()
     local id = "p" .. GH.To36(now) .. GH.To36(GH.db.reqSeq) .. "." .. GH.Bare(GH.Me())
-    local t = { id = id, it = itemID, n = n, by = GH.Me(), at = now, st = "a", rev = now, ed = GH.Me() }
+    local t = { id = id, it = itemID, n = n, by = GH.Me(), at = now, st = "a", rev = now, ed = GH.Me(), to = to or "s" }
     l[id] = t
     GH.Prof.RequestName(itemID)
     TargetChanged(t)
@@ -243,19 +259,20 @@ function P.Remove(tid)
     TargetChanged(t)
 end
 
--- My claim on one part: claimed and / or delivered (nil keeps the old value)
-function P.SetMine(tid, item, claimed, delivered)
+-- My claim on one part: claimed, delivered and / or made (nil keeps the old value)
+function P.SetMine(tid, item, claimed, delivered, made)
     local t = P.Get(tid)
     local l = Claims(tid)
     if not t or not l or not item then return end
     local me = GH.Me()
     local k = Key(me, item)
-    local cl = l[k] or { w = me, i = item, a = 0, d = 0, rev = 0 }
+    local cl = l[k] or { w = me, i = item, a = 0, d = 0, m = 0, rev = 0 }
     local a = claimed ~= nil and Clamp(claimed) or (cl.a or 0)
     local d = delivered ~= nil and Clamp(delivered) or (cl.d or 0)
-    if l[k] and a == cl.a and d == cl.d then return end
-    if not l[k] and a == 0 and d == 0 then return end
-    cl.a, cl.d = a, d
+    local m = made ~= nil and Clamp(made) or (cl.m or 0)
+    if l[k] and a == cl.a and d == cl.d and m == (cl.m or 0) then return end
+    if not l[k] and a == 0 and d == 0 and m == 0 then return end
+    cl.a, cl.d, cl.m = a, d, m
     cl.rev = math.max(GetServerTime(), (cl.rev or 0) + 1)
     l[k] = cl
     ClaimChanged(tid, cl, 1.5)   -- short wait: quick edits go out as one message
@@ -312,10 +329,10 @@ function P.ReceiveClaim(tid, cl, sender)
     -- target just finished: one note while playing
     local t = P.Get(tid)
     if t and t.st == "a" and cl.i == t.it then
-        local made = P.Parts(t)[1].made
+        local deliv = P.Parts(t)[1].deliv
         local before = seenLive[tid]
-        seenLive[tid] = made
-        if before and before < t.n and made >= t.n and GH.Toast then
+        seenLive[tid] = deliv
+        if before and before < t.n and deliv >= t.n and GH.Toast then
             GH.Toast.Add(("Raid prep done: |cffffd100%dx %s|r."):format(t.n, Name(t.it)), Icon(t.it), nil, OpenPrep)
         end
     end
@@ -326,7 +343,33 @@ GH.Listen("ROSTER", function()
     if P.primed then return end
     P.primed = true
     for _, t in pairs(Targets() or {}) do
-        if t.st == "a" then seenLive[t.id] = P.Parts(t)[1].made end
+        if t.st == "a" then seenLive[t.id] = P.Parts(t)[1].deliv end
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- Crafting a target item while you have an open claim on it counts as Made
+-- (up to your claim). Recipe IDs are the craft's spell ID; the spell name is a fallback.
+--------------------------------------------------------------------------------
+GH.On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
+    if unit ~= "player" or not spellID then return end
+    local me = GH.Me()
+    local spellName = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID)
+    for tid, t in pairs(Targets() or {}) do
+        local cl = t.st == "a" and Claims(tid)[Key(me, t.it)]
+        local made = cl and math.max(cl.m or 0, cl.d or 0) or 0
+        if cl and (cl.a or 0) > made then
+            local q
+            local I = GH.Index
+            for _, rid in ipairs(I and I.RecipesOfItem and I.RecipesOfItem(t.it) or {}) do
+                if rid == spellID then q = (GH.db.recipes[rid] or {}).q or 1 end
+            end
+            if not q and spellName and spellName == GH.Prof.ItemName(t.it) then
+                local rid = P.RecipeFor(t.it)
+                q = rid and (GH.db.recipes[rid] or {}).q or 1
+            end
+            if q then P.SetMine(tid, t.it, nil, nil, math.min(cl.a, made + q)) end
+        end
     end
 end)
 
