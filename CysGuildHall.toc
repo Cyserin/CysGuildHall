@@ -6,6 +6,7 @@
 ## SavedVariables: CysGuildHallDB
 ## OptionalDeps: CysUI, CysAuctionHouse, ForeverDungeonJournal
 ## IconTexture: Interface\Icons\Trade_BlackSmithing
+## X-Curse-Project-ID: 1817389
 
 Core.lua
 Style.lua
