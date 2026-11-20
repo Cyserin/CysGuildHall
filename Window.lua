@@ -18,6 +18,49 @@ local working = false
 GH.Listen("DATA", function() dirty = true end)
 GH.Listen("GUILD", function() dirty = true end)
 
+--------------------------------------------------------------------------------
+-- Bind on Pickup products are hidden everywhere: a guildmate can't hand them over.
+-- Bind type comes with the item data; it is saved once known (db.bind).
+--------------------------------------------------------------------------------
+local bindAsked, bindTimer = {}, nil
+local ItemInfo = C_Item.GetItemInfo or GetItemInfo
+
+function I.IsBoP(recipeID)
+    local c = GH.db.recipes[recipeID]
+    local o = c and c.o
+    if not o then return false end
+    local b = GH.db.bind[o]
+    if b == nil then
+        local bt = select(14, ItemInfo(o))
+        if bt then
+            GH.db.bind[o] = bt
+            b = bt
+        elseif not bindAsked[o] then
+            bindAsked[o] = true
+            C_Item.RequestLoadItemDataByID(o)
+        end
+    end
+    return b == 1
+end
+
+GH.On("ITEM_DATA_LOAD_RESULT", function(id, ok)
+    if not bindAsked[id] then return end
+    bindAsked[id] = nil
+    if not ok then return end
+    local bt = select(14, ItemInfo(id))
+    if bt == nil then return end
+    GH.db.bind[id] = bt
+    if bt == 1 then
+        dirty = true
+        if not bindTimer then
+            bindTimer = C_Timer.NewTimer(0.5, function()
+                bindTimer = nil
+                GH.Fire("INDEX")
+            end)
+        end
+    end
+end)
+
 local Work
 function Work()
     if #unresolved == 0 then working = false; return end
@@ -55,10 +98,12 @@ function I.Build()
             pr.crafters = pr.crafters + 1
             if (p.s or 0) > pr.best then pr.best, pr.max = p.s or 0, p.m or 0 end
             for _, id in ipairs(p.r or {}) do
-                pr.recipes[id] = true
-                local list = byRecipe[id]
-                if not list then list = {}; byRecipe[id] = list end
-                list[#list + 1] = { name = name, s = p.s or 0, m = p.m or 0, pid = pid }
+                if not I.IsBoP(id) then
+                    pr.recipes[id] = true
+                    local list = byRecipe[id]
+                    if not list then list = {}; byRecipe[id] = list end
+                    list[#list + 1] = { name = name, s = p.s or 0, m = p.m or 0, pid = pid }
+                end
             end
         end
     end
@@ -144,7 +189,7 @@ function I.Gaps(pid, q, catKey)
     local out = {}
     for _, p in ipairs(pids) do
         for _, id in ipairs(GH.db.allRecipes[p] or {}) do
-            if not byRecipe[id] then
+            if not byRecipe[id] and not I.IsBoP(id) then
                 local c = GH.Prof.Resolve(id)
                 if c and not c.p then c.p = p end
                 local name = I.RecipeName(id)
@@ -187,7 +232,7 @@ end
 function I.GapCount(pid)
     I.Build()
     local n = 0
-    for _, id in ipairs(GH.db.allRecipes[pid] or {}) do if not byRecipe[id] then n = n + 1 end end
+    for _, id in ipairs(GH.db.allRecipes[pid] or {}) do if not byRecipe[id] and not I.IsBoP(id) then n = n + 1 end end
     return n
 end
 
@@ -693,7 +738,11 @@ function PaintDetail()
     local pid = c.p or (crafters[1] and crafters[1].pid)
     local sub = pid and GH.ProfName(pid) or ""
     if (c.q or 1) > 1 then sub = sub .. ("  -  makes %d"):format(c.q) end
-    if req then sub = ("Requested by %s, %s"):format(GH.Short(req.by), Ago(req.at)) end
+    if req then
+        sub = ("Requested by %s, %s"):format(GH.Short(req.by), Ago(req.at))
+        local dl = GH.Requests.DeliveryText(req)
+        if dl then sub = sub .. " - " .. dl end
+    end
     d.sub:SetText(sub)
 
     -- crafters
@@ -744,6 +793,7 @@ function PaintDetail()
     d.minus:SetShown(not req)
     d.plus:SetShown(not req)
     d.makeLabel:SetText(req and "Quantity" or "Make")
+    d.mats:SetShown(req and req.by == GH.Me() and req.cr and req.cr ~= GH.Me() and GH.Requests.IsActive(req) and req.st ~= "open" and true or false)
     local reagents = c.r or {}
     local missing = 0
     for i = 1, REAGENT_ROWS do
@@ -780,6 +830,7 @@ function PaintDetail()
     end
 
     -- action strip
+    d.btnB.tip = nil
     if req then
         local text, col = GH.Requests.StateText(req)
         local cc = T[col] or T.text
@@ -794,16 +845,22 @@ function PaintDetail()
         SetButton(d.btnA, nil)
         SetButton(d.btnB, nil)
     else
-        d.actText:SetText(GH.Guild() and "Ask the guild to craft this for you." or "")
+        local set = GH.db.settings
+        d.actText:SetText(GH.Guild() and "Ask the guild:" or "")
         d.actText:SetTextColor(T.dim[1], T.dim[2], T.dim[3])
         SetButton(d.btnA, GH.Guild() and { ("Request %dx"):format(make), function()
-            local r = GH.Requests.New(id, state.make)
+            local r = GH.Requests.New(id, state.make, set.delivery)
             if r then
                 state.req = r.id
                 SetTab("requests")
             end
         end } or nil)
-        SetButton(d.btnB, nil)
+        -- delivery choice: click to switch between mail and trade (remembered)
+        SetButton(d.btnB, GH.Guild() and { GH.Requests.DELIVERY[set.delivery] or GH.Requests.DELIVERY.m, function()
+            set.delivery = (set.delivery == "t") and "m" or "t"
+            PaintDetail()
+        end } or nil)
+        d.btnB.tip = GH.Guild() and "How you want it delivered. Click to switch." or nil
     end
 end
 
@@ -868,6 +925,8 @@ function BuildOptions()
     end
     AddCheck("Show crafter names on item tooltips", function() return set.tooltip end, function(v) set.tooltip = v end)
     AddCheck("Craft request notes in your chat window", function() return set.notify end, function(v) set.notify = v end)
+    AddCheck("Materials pop-up when your request is claimed", function() return set.matsPopup end, function(v) set.matsPopup = v end)
+    AddCheck("Guild news pop-ups (new professions and recipes)", function() return set.toasts end, function(v) set.toasts = v end)
     AddCheck("Show the minimap button", function() return not set.minimapHide end, function(v)
         set.minimapHide = not v
         if GH.UpdateMinimapButton then GH.UpdateMinimapButton() end
@@ -1151,6 +1210,11 @@ local function Build()
 
     local rLabel = Label(inner, "Reagents")
     rLabel:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 0, -20 - CRAFTER_ROWS * 18)
+    -- your claimed request: reopen the materials pop-up (crafter's counts)
+    d.mats = S.Button(inner, 104, 18, "Crafter's counts")
+    d.mats:SetPoint("LEFT", rLabel, "RIGHT", 10, 0)
+    d.mats:SetScript("OnClick", function() if state.req and GH.Mats then GH.Mats.Show(state.req) end end)
+    d.mats:Hide()
     local plus = S.Button(inner, 18, 18, "+")
     plus:SetPoint("RIGHT", inner, "RIGHT", -12, 0)
     plus:SetPoint("TOP", rLabel, "TOP", 0, 3)
@@ -1206,6 +1270,13 @@ local function Build()
     for _, b in ipairs({ d.btnA, d.btnB }) do
         b:SetScript("OnClick", function(s) if s.act then s.act() end end)
     end
+    d.btnB:HookScript("OnEnter", function(s)
+        if not s.tip then return end
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText(s.tip, 1, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    d.btnB:HookScript("OnLeave", function() GameTooltip:Hide() end)
     d.actText = S.Text(strip, 11, T.dim)
     d.actText:SetPoint("LEFT")
     d.actText:SetPoint("RIGHT", d.btnB, "LEFT", -8, 0)

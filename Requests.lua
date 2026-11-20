@@ -75,13 +75,20 @@ local function Changed(r)
     if GH.Comm then GH.Comm.SendRequest(r) end
 end
 
-function R.New(recipeID, qty)
+-- Delivery: "m" = mail it to me, "t" = meet to trade
+R.DELIVERY = { m = "Mail it to me", t = "Meet to trade" }
+function R.DeliveryText(r)
+    if r.dl == "m" then return "wants it mailed" elseif r.dl == "t" then return "meet to trade" end
+end
+
+function R.New(recipeID, qty, dl)
     local l = List()
     if not l or not recipeID then return nil end
     GH.db.reqSeq = ((GH.db.reqSeq or 0) + 1) % 1296
     local now = GetServerTime()
     local id = GH.To36(now) .. GH.To36(GH.db.reqSeq) .. "." .. GH.Bare(GH.Me())
-    local r = { id = id, rc = recipeID, n = math.max(1, qty or 1), by = GH.Me(), at = now, st = "open", rev = now }
+    local r = { id = id, rc = recipeID, n = math.max(1, qty or 1), by = GH.Me(), at = now, st = "open", rev = now,
+        dl = R.DELIVERY[dl or ""] and dl or nil }
     l[id] = r
     Changed(r)
     return r
@@ -90,8 +97,10 @@ end
 function R.Set(id, state, crafter)
     local r = R.Get(id)
     if not r or not VALID[state] then return end
+    local old = r.cr
     r.st = state
     if crafter == false then r.cr = nil elseif crafter then r.cr = crafter end
+    if r.cr ~= old then r.ms, r.mp = nil, nil end
     r.rev = math.max(GetServerTime(), (r.rev or 0) + 1)
     Changed(r)
 end
@@ -134,6 +143,7 @@ end
 -- Incoming (from Comm)
 --------------------------------------------------------------------------------
 local told = {}
+local dlWaiting = {}   -- [id] = delivery that arrived before its request
 
 local function Notify(r)
     if not GH.db.settings.notify or told[r.id] then return end
@@ -141,11 +151,21 @@ local function Notify(r)
     local name = GH.Index and GH.Index.RecipeName(r.rc) or ("recipe " .. r.rc)
     if r.st == "open" and r.by ~= me and R.ICanMake(r.rc) then
         told[r.id] = true
-        GH.Print(("%s asks for %dx %s - you can make it. |cffd9a421/guildhall|r, Requests tab."):format(GH.Short(r.by), r.n, name))
+        local dl = R.DeliveryText(r)
+        GH.Print(("%s asks for %dx %s%s - you can make it. |cffd9a421/guildhall|r, Requests tab."):format(GH.Short(r.by), r.n, name, dl and (" (" .. dl .. ")") or ""))
     elseif r.by == me and r.st == "claimed" and r.cr then
         told[r.id] = true
         GH.Print(("%s claimed your request for %dx %s - send the mats, then mark them ready."):format(GH.Short(r.cr), r.n, name))
     end
+end
+
+function R.SetDelivery(id, dl)
+    if not R.DELIVERY[dl] then return end
+    local r = R.Get(id)
+    if not r then dlWaiting[id] = dl; return end
+    if r.dl == dl then return end
+    r.dl = dl
+    GH.Fire("REQUESTS", id)
 end
 
 function R.Receive(r)
@@ -155,6 +175,11 @@ function R.Receive(r)
     local have = l[r.id]
     if have and (have.rev or 0) >= r.rev then return end
     if have and have.st ~= r.st then told[r.id] = nil end
+    -- local-only fields: the crafter's reagent counts + pop-up shown, kept while the crafter is the same
+    if have and have.cr and have.cr == r.cr then r.ms, r.mp = have.ms, have.mp end
+    -- delivery travels in its own message (older versions ignore it)
+    r.dl = r.dl or (have and have.dl) or dlWaiting[r.id]
+    dlWaiting[r.id] = nil
     l[r.id] = r
     GH.Fire("REQUESTS", r.id)
     Notify(r)

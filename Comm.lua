@@ -60,6 +60,7 @@ C_Timer.NewTicker(0.25, Pump)
 local function Push(text, check, done, start)
     queue[#queue + 1] = { text = text, check = check, done = done, start = start }
 end
+C.Push = Push
 
 --------------------------------------------------------------------------------
 -- Names inside messages: always the full "First-Last" (Forever's last name sits where a
@@ -221,6 +222,8 @@ local function Answer(sender, theirs)
             C.SendRequest(r, (r.by == me) and (0.5 + math.random() * 2) or (4 + math.random() * 12))
         end
     end
+    -- my reagent counts for requests I claimed (after the requests themselves)
+    if GH.Mats then C_Timer.After(5 + math.random() * 3, GH.Mats.Resend) end
 end
 
 --------------------------------------------------------------------------------
@@ -242,6 +245,7 @@ function C.SendRequest(r, delay)
         local text = table.concat({ "R", id, GH.To36(cur.rc), GH.To36(cur.n), OutName(cur.by), GH.To36(cur.at),
             cur.st, cur.cr and OutName(cur.cr) or "", GH.To36(rev) }, "~")
         Push(text, function() return pendingReq[id] == rev end, function() pendingReq[id] = nil end)
+        if cur.dl then Push("Q~" .. id .. "~" .. cur.dl) end
     end)
 end
 
@@ -295,6 +299,20 @@ local function OnData(text, sender, senderRealm)
     if not profs then return end
     g.members[name] = { rev = rev, profs = profs, seen = have and have.seen }
     GH.Fire("DATA", name)
+    -- fresh news (changed in the last 30 minutes): a new profession or new recipes
+    if GetServerTime() - rev < 1800 then
+        local news = {}
+        for pid, p in pairs(profs) do
+            local old = have and have.profs and have.profs[pid]
+            local n = #(p.r or {})
+            if not old then
+                if n > 0 then news[#news + 1] = { pid = pid, new = true, n = n } end
+            elseif n > #(old.r or {}) then
+                news[#news + 1] = { pid = pid, n = n - #(old.r or {}) }
+            end
+        end
+        if #news > 0 then GH.Fire("SHARED", name, news) end
+    end
 end
 
 local function OnHello(text, sender, senderRealm)
@@ -327,6 +345,11 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         OnHello(text, sender, senderRealm)
     elseif kind == "R" then
         OnRequest(text, sender, senderRealm)
+    elseif kind == "Q" then
+        local id, dl = text:match("^Q~([^~]+)~(%a)$")
+        if id and GH.Requests then GH.Requests.SetDelivery(id, dl) end
+    elseif kind == "S" then
+        if GH.Mats then GH.Mats.Receive(text, sender) end
     elseif kind == "G" then
         local nm, guid = text:match("^G~([^~]+)~(Player%-[%w%-]+)$")
         local g = GH.Guild()
