@@ -11,6 +11,11 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "0.3.14",
+        fixed = {
+            "Guild news pop-ups: the text is a bit smaller and wraps onto a second line, so the whole note shows instead of being cut off.",
+        },
+    },
     { version = "0.3.13",
         added = {
             "Gaps tab covers the whole guild: each profession's full recipe list is shared, so you see recipes nobody knows for every profession anyone in the guild has, not only your own.",

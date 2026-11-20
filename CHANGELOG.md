@@ -2,6 +2,9 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 0.3.14
+- Guild news pop-ups: smaller text that wraps onto a second line, so the whole note shows instead of being cut off.
+
 ## 0.3.13
 - **Gaps tab covers the whole guild**: each profession's full recipe list is shared with guildmates, so you see recipes nobody knows for every profession anyone in the guild has, not only your own characters' professions.
 - **Where to learn it, from the guild**: opening a recipe nobody knows asks guildmates, and one who has read it sends the game's source text and the trainers / vendors they visited.

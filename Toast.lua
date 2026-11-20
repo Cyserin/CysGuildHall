@@ -40,12 +40,14 @@ local function Build()
     frame.icon:SetPoint("LEFT", 9, 0)
     frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     frame.title = S.Text(frame, 10, T.brand)
-    frame.title:SetPoint("TOPLEFT", frame.icon, "TOPRIGHT", 9, -1)
+    frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 46, -10)
     frame.title:SetText("Guild Hall")
-    frame.text = S.Text(frame, 12, T.text)
+    frame.text = S.Text(frame, 11, T.text)
     frame.text:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -3)
     frame.text:SetPoint("RIGHT", -10, 0)
-    frame.text:SetWordWrap(false)
+    frame.text:SetJustifyH("LEFT")
+    frame.text:SetWordWrap(true)
+    if frame.text.SetMaxLines then frame.text:SetMaxLines(2) end
 
     frame:SetScript("OnDragStart", function(f) f.dragging = true; f:StartMoving() end)
     frame:SetScript("OnDragStop", function(f)
@@ -104,6 +106,9 @@ function Toast.Next()
     Place()
     frame.icon:SetTexture(e.icon or "Interface\\Icons\\Trade_BlackSmithing")
     frame.text:SetText(e.text)
+    -- grow to fit a second line so the whole note shows
+    local h = frame.text:GetStringHeight() or 0
+    frame:SetHeight(math.max(46, math.floor(h + 0.5) + 33))
     frame.pid = e.pid
     frame.t = 0
     frame:SetAlpha(0)
