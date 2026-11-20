@@ -59,7 +59,9 @@ local function Build()
         f.point, f.x = p, x
     end)
     frame:SetScript("OnClick", function(f, button)
-        if button == "LeftButton" and f.pid and GH.Window and GH.Window.OpenProfession then
+        if button == "LeftButton" and f.onClick then
+            f.onClick()
+        elseif button == "LeftButton" and f.pid and GH.Window and GH.Window.OpenProfession then
             GH.Window.OpenProfession(f.pid)
         end
         f.t = IN + HOLD   -- start fading out
@@ -110,12 +112,13 @@ function Toast.Next()
     local h = frame.text:GetStringHeight() or 0
     frame:SetHeight(math.max(46, math.floor(h + 0.5) + 33))
     frame.pid = e.pid
+    frame.onClick = e.onClick
     frame.t = 0
     frame:SetAlpha(0)
     frame:Show()
 end
 
-function Toast.Add(text, icon, pid)
+function Toast.Add(text, icon, pid, onClick)
     if not GH.db or not GH.db.settings.toasts then return end
     if #queue >= MAX_QUEUE then
         -- a burst: the rest folds into one closing line
@@ -128,7 +131,7 @@ function Toast.Add(text, icon, pid)
         last.text = ("+%d more guild crafting %s - open /guildhall to see them."):format(last.more, last.more == 1 and "update" or "updates")
         return
     end
-    queue[#queue + 1] = { text = text, icon = icon, pid = pid }
+    queue[#queue + 1] = { text = text, icon = icon, pid = pid, onClick = onClick }
     Toast.Next()
 end
 
@@ -149,4 +152,67 @@ GH.Listen("SHARED", function(name, news)
             Toast.Add(("|cffffd100%s|r learned %d new %s %s."):format(who, e.n, prof, e.n == 1 and "recipe" or "recipes"), icon, e.pid)
         end
     end
+end)
+
+--------------------------------------------------------------------------------
+-- Craft requests: only crafters who can make the item see it (fresh requests only)
+--------------------------------------------------------------------------------
+local function ItemIcon(id)
+    if not id then return nil end
+    local ok, tex = pcall(C_Item.GetItemIconByID, id)
+    return ok and tex or nil
+end
+
+local function OpenTab(tab)
+    return function() if GH.Window then GH.Window.Open(nil, tab) end end
+end
+
+function Toast.Request(r, name)
+    local c = GH.db.recipes[r.rc]
+    Toast.Add(("|cffffd100%s|r placed a request for %dx %s - you can make it."):format(GH.Short(r.by), r.n or 1, name),
+        ItemIcon(c and c.o), nil, OpenTab("requests"))
+end
+
+--------------------------------------------------------------------------------
+-- Recipe items nobody in the guild knows: whoever loots one tells the guild
+--------------------------------------------------------------------------------
+local function LootToast(who, itemID, name)
+    local text
+    if who == GH.Me() then
+        text = ("You looted %s - not learned in the guild."):format(name)
+    else
+        text = ("|cffffd100%s|r looted %s - not learned in the guild."):format(GH.Short(who), name)
+    end
+    Toast.Add(text, ItemIcon(itemID), nil, OpenTab("gaps"))
+end
+
+local function Prefix(fmt) return type(fmt) == "string" and fmt:match("^(.-)%%s") or nil end
+local LOOT_PREFIXES = { Prefix(LOOT_ITEM_SELF), Prefix(LOOT_ITEM_SELF_MULTIPLE) }
+local lootSeen = {}   -- [itemID] = GetTime() of the last share (one per item every 10 minutes)
+
+GH.On("CHAT_MSG_LOOT", function(text)
+    if not GH.db or not GH.db.settings.lootShare or not GH.Index then return end
+    if issecretvalue and issecretvalue(text) then return end
+    if type(text) ~= "string" then return end
+    local mine
+    for _, pre in pairs(LOOT_PREFIXES) do
+        if pre ~= "" and text:sub(1, #pre) == pre then mine = true; break end
+    end
+    if not mine then return end
+    local id = tonumber(text:match("|Hitem:(%d+)"))
+    local name = text:match("|h%[(.-)%]|h")
+    if not id or not name then return end
+    local now = GetTime()
+    if lootSeen[id] and now - lootSeen[id] < 600 then return end
+    if not GH.Index.RecipeItemGap(id, name) then return end
+    lootSeen[id] = now
+    if GH.Comm and IsInGuild() then GH.Comm.SendLoot(id, name) end
+    LootToast(GH.Me(), id, name)
+end)
+
+GH.Listen("LOOTED", function(sender, itemID, name)
+    if not name or name == "" then return end
+    -- skip when our own data says someone already knows it
+    if GH.Index and GH.Index.RecipeItemGap(itemID, name) == false then return end
+    LootToast(sender, itemID, name)
 end)

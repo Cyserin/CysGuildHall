@@ -7,6 +7,7 @@
 --   D  data:  one entry, cut in pieces of ~200 characters
 --   L  list:  one profession's full recipe list (Gaps), cut the same way (0.3.13+)
 --   W / X     "where is recipe N learned?" and the answer (source text + trainers / vendors)
+--   N  someone looted a recipe item nobody in the guild knows (0.3.15+)
 -- Whoever hears a hello and holds a newer entry sends it after a short random wait;
 -- if someone else starts sending the same entry first, the others stand down.
 -- Sends are throttled and wait while you are in combat.
@@ -412,6 +413,12 @@ end
 
 local function Clean(s) return (tostring(s or ""):gsub("[~;%^]", " ")) end
 
+-- A recipe nobody in the guild knows was looted: "N~itemID~name" (0.3.15+)
+function C.SendLoot(itemID, name)
+    if not itemID then return end
+    Push("N~" .. GH.To36(itemID) .. "~" .. Clean(name):sub(1, 120))
+end
+
 local function Answerable(c)
     return c and (c.src ~= nil or (c.t and c.t[1] ~= nil))
 end
@@ -561,6 +568,10 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         OnAsk(text)
     elseif kind == "X" then
         OnSource(text)
+    elseif kind == "N" then
+        local id, name = text:match("^N~(%w+)~(.+)$")
+        id = id and GH.From36(id)
+        if id then GH.Fire("LOOTED", sender, id, name) end
     elseif kind == "Q" then
         local id, dl = text:match("^Q~([^~]+)~(%a)$")
         if id and GH.Requests then GH.Requests.SetDelivery(id, dl) end

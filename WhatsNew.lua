@@ -11,6 +11,13 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "0.3.15",
+        added = {
+            "Recipe items show Not learned in the guild on their tooltip when nobody in the guild has learned that recipe yet (bags, loot, the Auction House and chat links).",
+            "Loot a recipe nobody in the guild knows and the guild gets a pop-up about it. Switch on the Options tab.",
+            "Request pop-up: when a guildmate asks for something you can make, a pop-up shows who asked and what. Only crafters who know that recipe see it. Click it to open the Requests tab.",
+        },
+    },
     { version = "0.3.14",
         fixed = {
             "Guild news pop-ups: the text is a bit smaller and wraps onto a second line, so the whole note shows instead of being cut off.",

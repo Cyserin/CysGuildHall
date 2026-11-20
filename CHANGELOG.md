@@ -2,6 +2,11 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 0.3.15
+- **Not learned in the guild**: recipe items (Pattern, Plans, Recipe, Formula, Schematic...) show this line on their tooltip when nobody in the guild has learned that recipe yet.
+- **Looted recipe pop-up**: loot a recipe nobody in the guild knows and every guildmate with the Guild Hall gets a pop-up; click it to open the Gaps tab. Options switch "Tell the guild when you loot a recipe nobody knows".
+- **Request pop-up**: a new craft request pops up for the guildmates who can make it (only them); click it to open the Requests tab.
+
 ## 0.3.14
 - Guild news pop-ups: smaller text that wraps onto a second line, so the whole note shows instead of being cut off.
 

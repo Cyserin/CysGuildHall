@@ -1,5 +1,6 @@
 --------------------------------------------------------------------------------
--- Cys's Guild Hall - "Guild crafters" line on item tooltips
+-- Cys's Guild Hall - "Guild crafters" line on item tooltips,
+-- and "Not learned in the guild" on recipe items nobody in the guild knows
 --------------------------------------------------------------------------------
 local GH = CysGuildHall
 
@@ -8,6 +9,14 @@ local function AddLine(tooltip, data)
     if tooltip ~= GameTooltip and tooltip ~= ItemRefTooltip then return end
     local id = data and data.id
     if not id then return end
+    -- recipe items: "Not learned in the guild" when nobody has the recipe yet
+    if GH.Index.RecipeItemGap then
+        local name = C_Item.GetItemNameByID(id)
+        if (not name or name == "") and data.lines and data.lines[1] then name = data.lines[1].leftText end
+        if GH.Index.RecipeItemGap(id, name) then
+            tooltip:AddLine("Not learned in the guild", 0.85, 0.64, 0.13)
+        end
+    end
     local crafters = GH.Index.CraftersOfItem(id)
     if not crafters or #crafters == 0 then return end
     local names = {}

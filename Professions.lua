@@ -366,6 +366,7 @@ local function RecipeItemKey(name, force)
     if pre and (force or PREFIXES[pre:lower()]) then return Key(rest) end
     return nil
 end
+P.Key, P.RecipeItemKey = Key, RecipeItemKey
 
 -- Saves one trainer / vendor on a recipe; true when it is new for that recipe
 local function Mark(c, kind, who, where, skill)

@@ -284,7 +284,7 @@ end)
 --------------------------------------------------------------------------------
 -- Saved data
 --------------------------------------------------------------------------------
-local DEFAULTS = { tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true }
+local DEFAULTS = { tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true }
 
 GH.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end

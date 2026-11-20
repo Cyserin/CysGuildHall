@@ -146,13 +146,19 @@ local told = {}
 local dlWaiting = {}   -- [id] = delivery that arrived before its request
 
 local function Notify(r)
-    if not GH.db.settings.notify or told[r.id] then return end
+    if told[r.id] then return end
     local me = GH.Me()
     local name = GH.Index and GH.Index.RecipeName(r.rc) or ("recipe " .. r.rc)
     if r.st == "open" and r.by ~= me and R.ICanMake(r.rc) then
         told[r.id] = true
         local dl = R.DeliveryText(r)
-        GH.Print(("%s asks for %dx %s%s - you can make it. |cffd9a421/guildhall|r, Requests tab."):format(GH.Short(r.by), r.n, name, dl and (" (" .. dl .. ")") or ""))
+        if GH.db.settings.notify then
+            GH.Print(("%s asks for %dx %s%s - you can make it. |cffd9a421/guildhall|r, Requests tab."):format(GH.Short(r.by), r.n, name, dl and (" (" .. dl .. ")") or ""))
+        end
+        -- pop-up only for requests placed in the last 30 minutes (not old ones synced at login)
+        if GH.Toast and GH.Toast.Request and GetServerTime() - (r.at or 0) < 1800 then GH.Toast.Request(r, name) end
+    elseif not GH.db.settings.notify then
+        return
     elseif r.by == me and r.st == "claimed" and r.cr then
         told[r.id] = true
         GH.Print(("%s claimed your request for %dx %s - send the mats, then mark them ready."):format(GH.Short(r.cr), r.n, name))

@@ -237,6 +237,65 @@ function I.GapCount(pid)
 end
 
 --------------------------------------------------------------------------------
+-- Recipe items ("Pattern: Red Linen Robe"): has anyone in the guild learned what it teaches?
+-- Matched by name against the shared recipe lists (recipe name or product name).
+--------------------------------------------------------------------------------
+local byRecipeItem, recipeItemDirty = {}, true
+GH.Listen("DATA", function() recipeItemDirty = true end)
+GH.Listen("NAMES", function() recipeItemDirty = true end)
+GH.Listen("INDEX", function() recipeItemDirty = true end)
+
+local function RecipeItemIndex()
+    if not recipeItemDirty then return byRecipeItem end
+    recipeItemDirty = false
+    wipe(byRecipeItem)
+    local Key = GH.Prof.Key
+    local function Add(name, id)
+        local k = Key(name)
+        if not k then return end
+        local l = byRecipeItem[k]
+        if not l then l = {}; byRecipeItem[k] = l end
+        l[#l + 1] = id
+    end
+    local function AddRecipe(id)
+        local c = GH.db.recipes[id]
+        if not c then return end
+        Add(c.n, id)
+        local out = c.o and GH.db.names[c.o]
+        if out and out ~= c.n then Add(out, id) end
+    end
+    for _, list in pairs(GH.db.allRecipes) do
+        for _, id in ipairs(list) do AddRecipe(id) end
+    end
+    for id in pairs(byRecipe) do AddRecipe(id) end
+    return byRecipeItem
+end
+
+-- true (+ recipe ID) = a recipe item nobody in the guild has learned; false = someone has;
+-- nil = not a recipe item, or one we have no data for
+function I.RecipeItemGap(itemID, name)
+    if not GH.db or not GH.Prof or not GH.Prof.RecipeItemKey then return nil end
+    if (not name or name == "") and itemID then name = C_Item.GetItemNameByID(itemID) end
+    local isRecipe = false
+    if itemID and C_Item.GetItemInfoInstant then
+        local ok, _, _, _, _, _, classID = pcall(C_Item.GetItemInfoInstant, itemID)
+        isRecipe = ok and classID == 9   -- Enum.ItemClass.Recipe
+    end
+    local k = GH.Prof.RecipeItemKey(name, isRecipe)
+    if not k then return nil end
+    I.Build()
+    local ids = RecipeItemIndex()[k]
+    if not ids then return nil end
+    local gap
+    for _, id in ipairs(ids) do
+        if byRecipe[id] then return false end
+        if not gap and not I.IsBoP(id) then gap = id end
+    end
+    if gap then return true, gap end
+    return nil
+end
+
+--------------------------------------------------------------------------------
 -- Item type of a recipe's product: group (e.g. "Weapon") + category ("One-Handed Swords")
 --------------------------------------------------------------------------------
 local catCache = {}
@@ -934,7 +993,8 @@ function BuildOptions()
     AddCheck("Show crafter names on item tooltips", function() return set.tooltip end, function(v) set.tooltip = v end)
     AddCheck("Craft request notes in your chat window", function() return set.notify end, function(v) set.notify = v end)
     AddCheck("Materials pop-up when your request is claimed", function() return set.matsPopup end, function(v) set.matsPopup = v end)
-    AddCheck("Guild news pop-ups (new professions and recipes)", function() return set.toasts end, function(v) set.toasts = v end)
+    AddCheck("Guild news pop-ups (recipes, requests, rare loot)", function() return set.toasts end, function(v) set.toasts = v end)
+    AddCheck("Tell the guild when you loot a recipe nobody knows", function() return set.lootShare end, function(v) set.lootShare = v end)
     AddCheck("Show the minimap button", function() return not set.minimapHide end, function(v)
         set.minimapHide = not v
         if GH.UpdateMinimapButton then GH.UpdateMinimapButton() end
