@@ -271,6 +271,12 @@ local function PaintDetail(t)
         if not can then b:ClearFocus() end
     end
     d.allDone:SetActive(can and mine ~= nil and (mine.a or 0) > (mine.d or 0))
+    -- Claim button: take whatever is still open on this part (others' claims left alone)
+    local myPart = mine and math.max(mine.a or 0, mine.d or 0) or 0
+    local open = focus.need - (focus.claimed - myPart)
+    d.claimRest.to = (can and open > myPart) and open or nil
+    d.claimRest:SetShown(d.claimRest.to ~= nil)
+    if d.claimRest.to then d.claimRest:SetLabel(("Claim %d"):format(open - myPart)) end
     local note
     if not can then
         note = "You can't craft this - pick a material above to gather."
@@ -565,8 +571,23 @@ function UI.Build(frame)
     line:SetPoint("BOTTOMRIGHT", -10, 58)
     line:SetHeight(1)
     d.yourNote = S.Text(body, 11, SOFT)
+    d.claimRest = S.Button(body, 80, 20, "Claim")
+    d.claimRest:SetPoint("BOTTOMRIGHT", -10, 35)
+    d.claimRest:SetScript("OnClick", function(s)
+        if not state.sel or not state.focus or not s.to then return end
+        d.claim:ClearFocus()
+        GH.Prep.SetMine(state.sel, state.focus, s.to, nil)
+        UI.Paint()
+    end)
+    d.claimRest:HookScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("Claim what is still open on this part", 1, 1, 1)
+        GameTooltip:AddLine("Or type any amount in the Claim box and press Enter.", 0.84, 0.77, 0.62, true)
+        GameTooltip:Show()
+    end)
+    d.claimRest:HookScript("OnLeave", function() GameTooltip:Hide() end)
     d.yourNote:SetPoint("BOTTOMLEFT", 10, 38)
-    d.yourNote:SetPoint("RIGHT", body, "RIGHT", -10, 0)
+    d.yourNote:SetPoint("RIGHT", d.claimRest, "LEFT", -8, 0)
     d.yourNote:SetWordWrap(false)
     local yl = Label(body, "Your part")
     yl:SetPoint("BOTTOMLEFT", 10, 15)

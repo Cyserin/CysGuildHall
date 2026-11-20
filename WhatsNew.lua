@@ -16,6 +16,7 @@ WN.ENTRIES = {
             "Raid Prep tab: officers set guild targets, an item and how many the guild needs (shift-click an item or type its name). Officers can change the count or remove a target.",
             "Each target lists its parts: the item itself, plus the materials from its recipe with how many the whole target takes.",
             "Claim a part: crafters claim how many they will make, gatherers claim an amount of a material. Keep your Delivered number up to date (or press All in) and the whole guild sees the progress.",
+            "Claim button: one click claims whatever is still open on the part you picked. Or type any amount in the Claim box.",
             "Who is on it: every part shows who claimed how much and what they delivered. Gatherers see which crafters to send their materials to.",
             "A pop-up and a chat note when an officer sets a new target, and one when a target is done. Item tooltips show raid prep progress for target items and their materials.",
         },
