@@ -1,0 +1,12 @@
+package-as: CysGuildHall
+
+manual-changelog:
+  filename: RELEASE_NOTES.md
+  markup-type: markdown
+
+ignore:
+  - README.md
+  - RELEASE_NOTES.md
+  - .github
+  - .gitattributes
+  - .gitignore

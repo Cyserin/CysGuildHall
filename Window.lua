@@ -130,6 +130,51 @@ local function SortCrafters(list)
     return list
 end
 
+-- Alts under their main: one line per player. The line is the main when the main can make
+-- it, else that player's best alt. c.chars = every character of that player in the list
+-- (main first), c.altOf = the main's name when the line is an alt whose main can't make it.
+local function GroupAlts(list)
+    if not GH.db.settings.altGroup or not next(GH.altMain) then return list end
+    local groups, order = {}, {}
+    for _, c in ipairs(list) do
+        local own = GH.RosterName(c.name)
+        local key = GH.MainOf(c.name) or own
+        c.isMain = (key == own)
+        local grp = groups[key]
+        if not grp then grp = {}; groups[key] = grp; order[#order + 1] = key end
+        grp[#grp + 1] = c
+    end
+    if #order == #list then
+        -- nobody shares a line: only mark alts whose main is not in the list
+        for _, c in ipairs(list) do
+            if not c.isMain then c.altOf = GH.MainOf(c.name) end
+        end
+        return list
+    end
+    local out = {}
+    for _, key in ipairs(order) do
+        local grp = groups[key]
+        table.sort(grp, function(a, b)
+            if a.isMain ~= b.isMain then return a.isMain end
+            if a.online ~= b.online then return a.online end
+            if a.s ~= b.s then return a.s > b.s end
+            return a.name < b.name
+        end)
+        local head = grp[1]
+        local e = { name = head.name, s = head.s, m = head.m, pid = head.pid, online = head.online }
+        for i = 2, #grp do
+            local o = grp[i]
+            if o.online then e.online = true end
+            if o.s > e.s then e.s, e.m = o.s, o.m end
+        end
+        if #grp > 1 then e.chars = grp end
+        if not head.isMain then e.altOf = key end
+        out[#out + 1] = e
+    end
+    return out
+end
+I.GroupAlts = GroupAlts
+
 -- crafters of a recipe, online first
 function I.Crafters(recipeID)
     I.Build()
@@ -137,7 +182,7 @@ function I.Crafters(recipeID)
     for _, c in ipairs(byRecipe[recipeID] or {}) do
         out[#out + 1] = { name = c.name, s = c.s, m = c.m, pid = c.pid, online = GH.IsOnline(c.name) or false }
     end
-    return SortCrafters(out)
+    return SortCrafters(GroupAlts(out))
 end
 
 -- crafters of an item (any recipe that makes it), one line per person
@@ -154,7 +199,7 @@ function I.CraftersOfItem(itemID)
             end
         end
     end
-    return SortCrafters(out)
+    return SortCrafters(GroupAlts(out))
 end
 
 -- recipes known in the guild that make this item
@@ -442,6 +487,41 @@ local LIST_W = 300
 local ROW_H = 22
 local ROWS = 16
 local CRAFTER_ROWS = 5
+
+-- "Can make it" line extras: "+ Alt Name" (class color when online) or "alt of Main Name"
+local function ColorName(full)
+    local r, g, b = 0.55, 0.55, 0.55
+    if GH.IsOnline(full) then r, g, b = GH.ClassColor(full) end
+    return ("|cff%02x%02x%02x%s|r"):format(math.floor(r * 255), math.floor(g * 255), math.floor(b * 255), GH.Short(full))
+end
+local function AltSuffix(c)
+    if c.chars then
+        local rest = {}
+        for i = 2, #c.chars do rest[#rest + 1] = c.chars[i] end
+        if #rest == 1 then return "  |cffd6c49e+|r " .. ColorName(rest[1].name) end
+        local on = 0
+        for _, o in ipairs(rest) do if o.online then on = on + 1 end end
+        return ("  |cffd6c49e+ %d alts%s|r"):format(#rest, on > 0 and (", |cff4fd66b" .. on .. " on|r") or "")
+    elseif c.altOf then
+        return "  |cffd6c49ealt of " .. GH.Short(c.altOf) .. "|r"
+    end
+    return ""
+end
+local function CrafterTip(row)
+    local c = row.data
+    if not c then return end
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    local main = c.altOf or (c.chars and GH.RosterName(c.chars[1].name)) or c.name
+    GameTooltip:SetText(GH.Short(main) .. (c.altOf and " (alt can make it)" or ""), 0.85, 0.64, 0.13)
+    for _, o in ipairs(c.chars or { c }) do
+        local tag = (GH.RosterName(o.name) == main) and "main" or "alt"
+        local skill = o.m > 0 and ("%d / %d"):format(o.s, o.m) or tostring(o.s)
+        GameTooltip:AddDoubleLine(ColorName(o.name) .. "  |cffd6c49e" .. tag .. "|r",
+            skill .. (o.online and "  |cff4fd66bonline|r" or "  |cff8a8a8aoffline|r"), 1, 1, 1, 0.84, 0.77, 0.62)
+    end
+    GameTooltip:AddLine("Alts come from the guild's alt rank and the note naming the main. Options tab to change.", 0.84, 0.77, 0.62, true)
+    GameTooltip:Show()
+end
 local REAGENT_ROWS = 7
 
 local frame
@@ -853,10 +933,13 @@ function PaintDetail()
             r.dot:SetColorTexture(cr.online and T.green[1] or 0.35, cr.online and T.green[2] or 0.35, cr.online and T.green[3] or 0.35)
             local cr_r, cr_g, cr_b = GH.ClassColor(cr.name)
             if not cr.online then cr_r, cr_g, cr_b = 0.55, 0.55, 0.55 end
-            r.text:SetText(GH.Short(cr.name))
+            r.text:SetText(GH.Short(cr.name) .. AltSuffix(cr))
             r.text:SetTextColor(cr_r, cr_g, cr_b)
             r.right:SetText(cr.m > 0 and ("%d / %d"):format(cr.s, cr.m) or tostring(cr.s))
+            r.data = (cr.chars or cr.altOf) and cr or nil
+            r:EnableMouse(r.data and true or false)
         else
+            r.data = nil
             r:Hide()
         end
     end
@@ -1043,6 +1126,35 @@ function BuildOptions()
     AddCheck("Materials pop-up when your request is claimed", function() return set.matsPopup end, function(v) set.matsPopup = v end)
     AddCheck("Guild news pop-ups (recipes, requests, rare loot)", function() return set.toasts end, function(v) set.toasts = v end)
     AddCheck("Tell the guild when you loot a recipe nobody knows", function() return set.lootShare end, function(v) set.lootShare = v end)
+    local altCheck = AddCheck("Group alts under their main", function() return set.altGroup end, function(v)
+        set.altGroup = v
+        GH.BuildAlts()
+        GH.Fire("ALTS")
+    end)
+    -- which rank marks alts: any rank named Alt / Alts, or one picked rank
+    opt.altRank = S.Dropdown(opt, 150, 18, function()
+        local items = { { "", "Any rank named Alt" } }
+        for _, rk in ipairs(GH.RankNames()) do items[#items + 1] = { rk[2], rk[2] } end
+        if set.altRank ~= "" then
+            local have
+            for _, it in ipairs(items) do if it[1] == set.altRank then have = true end end
+            if not have then items[#items + 1] = { set.altRank, set.altRank } end
+        end
+        return items
+    end, function() return set.altRank or "" end, function(v)
+        set.altRank = v
+        opt.altRank:Refresh()
+        GH.BuildAlts()
+        GH.Fire("ALTS")
+    end)
+    opt.altRank:SetPoint("LEFT", altCheck, "RIGHT", 10, 0)
+    opt.altRank:HookScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Guild rank for alts", 0.85, 0.64, 0.13)
+        GameTooltip:AddLine("Members of this rank whose public or officer note names another member (e.g. Alt of First Last) are shown under that member.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    opt.altRank:HookScript("OnLeave", function() GameTooltip:Hide() end)
     AddCheck("Show the minimap button", function() return not set.minimapHide end, function(v)
         set.minimapHide = not v
         if GH.UpdateMinimapButton then GH.UpdateMinimapButton() end
@@ -1121,7 +1233,7 @@ function BuildOptions()
 end
 
 -- Who runs which version: newer than yours green, older soft red, same parchment
-local VERS_LINES = 6
+local VERS_LINES = 5
 local function Hex(c) return ("%02x%02x%02x"):format(math.floor(c[1] * 255), math.floor(c[2] * 255), math.floor(c[3] * 255)) end
 function PaintVersions(opt)
     local lines = { "You: |cff" .. Hex(SOFT) .. tostring(GH.version) .. "|r" }
@@ -1144,6 +1256,7 @@ function PaintOptions()
     if not opt or not opt:IsShown() then return end
     for _, c in ipairs(opt.checks) do c:Refresh() end
     opt.done:Refresh()
+    opt.altRank:Refresh()
     local list = {}
     local g = GH.Guild()
     for name in pairs(GH.db.mine) do
@@ -1388,6 +1501,10 @@ local function Build()
         r.text:SetPoint("LEFT", r.dot, "RIGHT", 8, 0)
         r.right = S.Text(r, 11, SOFT, "RIGHT")
         r.right:SetPoint("RIGHT")
+        r.text:SetPoint("RIGHT", r.right, "LEFT", -8, 0)
+        r.text:SetWordWrap(false)
+        r:SetScript("OnEnter", CrafterTip)
+        r:SetScript("OnLeave", function() GameTooltip:Hide() end)
         d.crafters[i] = r
     end
     d.cLabel = cLabel
@@ -1546,6 +1663,7 @@ GH.Listen("DATA", RefreshSoon)
 GH.Listen("INDEX", RefreshSoon)
 GH.Listen("NAMES", RefreshSoon)
 GH.Listen("ROSTER", RefreshSoon)
+GH.Listen("ALTS", RefreshSoon)
 GH.Listen("REQUESTS", RefreshSoon)
 GH.Listen("VERSIONS", function() if PaintOptions then PaintOptions() end end)
 GH.On("BAG_UPDATE_DELAYED", function()

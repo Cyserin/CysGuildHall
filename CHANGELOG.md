@@ -2,10 +2,17 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 0.3.17
+- **Alts under their main**: in Can make it, a guildmate's alt shares one line with their main ("Main Name + Alt Name"), with the best skill of the two and online if either is. Hover the line for every character, its skill and online state. An alt whose main can't make the item shows "alt of Main Name".
+- Alts come from the guild roster: a member with an Alt rank (any rank named Alt / Alts, or one rank picked on the Options tab) whose public or officer note names another member. Options switch "Group alts under their main".
+- Item tooltips list crafters with their alts folded in ("+1 alt").
+- **Raid Prep**: a Claim button takes whatever is still open on the picked part in one click. Each claim has Claim / Made / Handed in: crafting a target item raises Made by itself (up to your claim); the target is complete when enough is handed in. Officers pick the hand-in when adding a target (themselves, the guild bank or a named raider).
+- The Options tab lists up to 5 other Guild Hall versions (was 6) to make room.
+
 ## 0.3.16
 - **Raid Prep tab** (`/guildhall prep`): officers set guild targets, an item and how many the guild needs (shift-click an item or type its name), change the count or remove a target. Only officer ranks can set targets.
 - **Parts**: each target lists the item itself plus the materials from its recipe, with how many the whole target takes.
-- **Claims**: crafters claim how many they will make, gatherers claim an amount of a material; everyone keeps their own Delivered number up to date (or presses All in). A Claim button takes whatever is still open on the picked part in one click. Each claim has Claim / Made / Handed in: crafting a target item raises Made by itself (up to your claim); the target is complete when enough is handed in. Officers pick the hand-in when adding a target (themselves, the guild bank or a named raider). Progress bar with made / claimed / needed.
+- **Claims**: crafters claim how many they will make, gatherers claim an amount of a material; everyone keeps their own Delivered number up to date (or presses All in). Progress bar with made / claimed / needed.
 - **Who is on it**: each part lists who claimed how much and what they delivered; gatherers see which crafters to send materials to.
 - Pop-up + chat note when an officer sets a new target, a pop-up when a target is done; item tooltips show raid prep progress on target items and their materials.
 - A long guild name in the window title no longer runs under the tabs.

@@ -193,9 +193,11 @@ local function ReadRoster()
     local new, bare, byGuid, first = {}, {}, {}, {}
     local count = 0
     for i = 1, n do
-        local name, _, rankIndex, level, _, _, _, _, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
+        local name, rankName, rankIndex, level, _, _, note, onote, online, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
         if type(name) == "string" and name ~= "" then
-            local e = { online = online and true or false, class = classFile, level = level, raw = name, rank = rankIndex }
+            local e = { online = online and true or false, class = classFile, level = level, raw = name, rank = rankIndex,
+                rankName = type(rankName) == "string" and rankName or nil,
+                note = type(note) == "string" and note or nil, onote = type(onote) == "string" and onote or nil }
             -- Forever's roster writes "Name Realm" (a space): make it "Name-Realm" like chat names
             name = name:gsub("^(%S+) (%S+)$", "%1-%2")
             e.full = GH.Full(name)
@@ -215,8 +217,89 @@ local function ReadRoster()
         GH.rosterFirst = first
         GH.rosterCount = count
         GH.FixNames()
+        GH.BuildAlts()
         GH.Fire("ROSTER")
     end
+end
+
+--------------------------------------------------------------------------------
+-- Alts: a member whose guild rank is an alt rank and whose note (public, then officer)
+-- names another guild member is that member's alt. Lists then show the alt under its main.
+--------------------------------------------------------------------------------
+GH.altMain = {}      -- [alt full] = main full
+
+-- Is this rank name an alt rank? The setting picks one rank by name; empty = any rank
+-- with the word "alt" or "alts" in it (so "Exalted" does not count).
+function GH.IsAltRank(rankName)
+    if type(rankName) ~= "string" or rankName == "" then return false end
+    local want = GH.db and GH.db.settings.altRank or ""
+    if want ~= "" then return rankName:lower() == want:lower() end
+    local r = " " .. rankName:lower() .. " "
+    return r:find("[^%a]alts?[^%a]") ~= nil
+end
+
+-- Guild rank names as { { rankIndex, name }, ... }, from the roster
+function GH.RankNames()
+    local seen, out = {}, {}
+    for _, e in pairs(GH.roster) do
+        if e.rankName and e.rank and not seen[e.rank] then
+            seen[e.rank] = true
+            out[#out + 1] = { e.rank, e.rankName }
+        end
+    end
+    table.sort(out, function(a, b) return a[1] < b[1] end)
+    return out
+end
+
+local SKIP = { alt = true, alts = true, of = true, main = true, mains = true, is = true, my = true, the = true, s = true, ["and"] = true, char = true, toon = true }
+
+-- The guild member a note names, or nil. Tries "First Last" pairs first, then a first
+-- name only one member has. Never the alt itself.
+local function NoteMain(text, self)
+    if type(text) ~= "string" or text == "" then return nil end
+    local words = {}
+    for w in text:gmatch("[%a\128-\255]+") do words[#words + 1] = w:lower() end
+    for i = 1, #words - 1 do
+        local e = GH.rosterLower[words[i] .. "-" .. words[i + 1]]
+        if e and e.full ~= self then return e.full end
+    end
+    for i = 1, #words do
+        local w = words[i]
+        if not SKIP[w] then
+            local list = GH.rosterFirst[w]
+            if list and #list == 1 and list[1] ~= self then return list[1] end
+        end
+    end
+    return nil
+end
+
+function GH.BuildAlts()
+    local map = {}
+    local lower = {}
+    for full, e in pairs(GH.roster) do lower[full:lower()] = e end
+    GH.rosterLower = lower
+    if GH.db and GH.db.settings.altGroup then
+        for full, e in pairs(GH.roster) do
+            if GH.IsAltRank(e.rankName) then
+                local main = NoteMain(e.note, full) or NoteMain(e.onote, full)
+                if main then map[full] = main end
+            end
+        end
+    end
+    GH.altMain = map
+end
+GH.rosterLower = {}
+
+-- Main of an alt ("First-Last"), or nil when this character is not a known alt
+function GH.MainOf(full)
+    local e = GH.RosterEntry(full)
+    return e and e.full and GH.altMain[e.full] or nil
+end
+
+-- Roster spelling of a member's name (falls back to the name given)
+function GH.RosterName(full)
+    local e = GH.RosterEntry(full)
+    return e and e.full or full
 end
 
 -- A member's real "First-Last" name. On Forever the game gives addon messages only the
@@ -284,7 +367,7 @@ end)
 --------------------------------------------------------------------------------
 -- Saved data
 --------------------------------------------------------------------------------
-local DEFAULTS = { tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true }
+local DEFAULTS = { tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true, altGroup = true, altRank = "" }
 
 GH.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end

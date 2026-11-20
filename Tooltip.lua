@@ -29,7 +29,8 @@ local function AddLine(tooltip, data)
         local c = crafters[i]
         local r, g, b = 0.55, 0.55, 0.55   -- offline: grey
         if c.online then r, g, b = GH.ClassColor(c.name) end
-        names[i] = ("|cff%02x%02x%02x%s|r"):format(r * 255, g * 255, b * 255, GH.Short(c.name))
+        local extra = c.chars and ((" |cff8a8a8a+%d alt%s|r"):format(#c.chars - 1, #c.chars > 2 and "s" or "")) or ""
+        names[i] = ("|cff%02x%02x%02x%s|r"):format(r * 255, g * 255, b * 255, GH.Short(c.name)) .. extra
     end
     local text = table.concat(names, ", ")
     if #crafters > 4 then text = text .. (" |cff8a8a8a+%d|r"):format(#crafters - 4) end

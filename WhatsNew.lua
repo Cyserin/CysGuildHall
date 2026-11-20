@@ -11,14 +11,21 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "0.3.17",
+        added = {
+            "Alts under their main: in Can make it, a guildmate's alt shares one line with their main, with the best skill of the two and a green dot if either is online. Hover the line to see every character.",
+            "Alts are found from the guild roster: a member with an Alt rank whose public or officer note names another member (for example Alt of First Last). Turn it off or pick which rank means alt on the Options tab.",
+            "Item tooltips show crafters with their alts folded in.",
+            "Claim button: one click claims whatever is still open on the part you picked. Or type any amount in the Claim box.",
+            "Made counts by itself: craft a target item while you have a claim on it and your Made number goes up (up to your claim). Handed in is still yours to set, or press All in.",
+            "Hand-in: when adding a target, officers pick where finished items go: themselves, the guild bank or a named raider. Crafters see it on the target.",
+        },
+    },
     { version = "0.3.16",
         added = {
             "Raid Prep tab: officers set guild targets, an item and how many the guild needs (shift-click an item or type its name). Officers can change the count or remove a target.",
             "Each target lists its parts: the item itself, plus the materials from its recipe with how many the whole target takes.",
             "Claim a part: crafters claim how many they will make, gatherers claim an amount of a material. Keep your Delivered number up to date (or press All in) and the whole guild sees the progress.",
-            "Claim button: one click claims whatever is still open on the part you picked. Or type any amount in the Claim box.",
-            "Made counts by itself: craft a target item while you have a claim on it and your Made number goes up (up to your claim). Handed in is still yours to set, or press All in.",
-            "Hand-in: when adding a target, officers pick where finished items go: themselves, the guild bank or a named raider. Crafters see it on the target.",
             "Who is on it: every part shows who claimed how much and what they delivered. Gatherers see which crafters to send their materials to.",
             "A pop-up and a chat note when an officer sets a new target, and one when a target is done. Item tooltips show raid prep progress for target items and their materials.",
         },
