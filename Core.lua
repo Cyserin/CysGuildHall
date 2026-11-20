@@ -486,6 +486,8 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Window then GH.Window.Open(nil, "requests") end
     elseif msg == "prep" or msg == "raid" or msg == "raidprep" then
         if GH.Window then GH.Window.Open(nil, "prep") end
+    elseif msg == "calendar" or msg == "cal" or msg == "events" then
+        if GH.Window then GH.Window.Open(nil, "cal") end
     elseif msg == "minimap" then
         GH.db.settings.minimapHide = not GH.db.settings.minimapHide
         if GH.UpdateMinimapButton then GH.UpdateMinimapButton() end
@@ -510,7 +512,7 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     elseif msg == "help" then
-        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, prep, mats, gaps, options, versions, news, welcome, minimap, check, sync, tooltip, notify.")
+        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, prep, calendar, mats, gaps, options, versions, news, welcome, minimap, check, sync, tooltip, notify.")
     elseif msg ~= "" then
         if GH.Window then GH.Window.Open(msg) end
     else

@@ -579,7 +579,7 @@ local Paint, PaintDetail, SetTab, PaintOptions, BuildOptions, PaintVersions
 local function HintText()
     if state.tab == "requests" then return "Search requests..." end
     if state.tab == "gaps" then return "Search recipes nobody knows..." end
-    if state.tab == "options" or state.tab == "prep" then return "" end
+    if state.tab == "options" or state.tab == "prep" or state.tab == "cal" then return "" end
     return "Search all guild crafts..."
 end
 
@@ -592,6 +592,9 @@ local function Rebuild()
     elseif state.tab == "prep" then
         -- so does the raid prep panel
         if GH.PrepPanel then GH.PrepPanel.Paint() end
+    elseif state.tab == "cal" then
+        -- and the calendar panel
+        if GH.CalPanel then GH.CalPanel.Paint() end
     elseif state.tab == "gaps" then
         if state.query ~= "" then
             for _, r in ipairs(I.Gaps(nil, state.query, nil, state.gapSrc)) do list[#list + 1] = r end
@@ -1079,9 +1082,10 @@ function SetTab(tab)
     if tab == "craft" or tab == "gaps" then state.req = nil end
     frame.options:SetShown(tab == "options")
     if frame.prep then frame.prep:SetShown(tab == "prep") end
+    if frame.cal then frame.cal:SetShown(tab == "cal") end
     frame.srcBtn:SetShown(tab == "gaps")
     frame.search:SetTextInsets(6, tab == "gaps" and (frame.srcBtn:GetWidth() + 10) or 6, 0, 0)
-    if tab == "options" or tab == "prep" then frame.search:ClearFocus() end
+    if tab == "options" or tab == "prep" or tab == "cal" then frame.search:ClearFocus() end
     if frame.search:GetText() ~= "" then
         frame.search:SetText("")   -- rebuilds through OnTextChanged
     else
@@ -1335,8 +1339,11 @@ local function Build()
             SetTab("options")
         end
     end)
+    local tCal = S.Button(header, 72, 22, "Calendar")
+    tCal:SetPoint("RIGHT", tOpt, "LEFT", -10, 0)
+    tCal:SetScript("OnClick", function() SetTab("cal") end)
     local tPrep = S.Button(header, 76, 22, "Raid Prep")
-    tPrep:SetPoint("RIGHT", tOpt, "LEFT", -10, 0)
+    tPrep:SetPoint("RIGHT", tCal, "LEFT", -4, 0)
     tPrep:SetScript("OnClick", function() SetTab("prep") end)
     local tGaps = S.Button(header, 56, 22, "Gaps")
     tGaps:SetPoint("RIGHT", tPrep, "LEFT", -4, 0)
@@ -1349,6 +1356,7 @@ local function Build()
     tCraft:SetScript("OnClick", function() SetTab("craft") end)
     frame.tabs.craft, frame.tabs.requests, frame.tabs.gaps, frame.tabs.options = tCraft, tReq, tGaps, tOpt
     frame.tabs.prep = tPrep
+    frame.tabs.cal = tCal
     -- a long guild name stops before the tabs
     frame.guild:SetPoint("RIGHT", tCraft, "LEFT", -8, 0)
     frame.guild:SetJustifyH("LEFT")
@@ -1621,6 +1629,7 @@ local function Build()
 
     BuildOptions()
     if GH.PrepPanel then frame.prep = GH.PrepPanel.Build(frame) end
+    if GH.CalPanel then frame.cal = GH.CalPanel.Build(frame) end
 
     frame:SetScript("OnShow", function()
         frame.guild:SetText(GetGuildInfo("player") or "")

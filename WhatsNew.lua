@@ -11,6 +11,14 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "0.4.0",
+        added = {
+            "Calendar tab: the guild's events for the next 30 days, straight from the game's calendar. Pick one to sign up, say tentative or remove yourself (or accept / decline an invite) and see who is coming, grouped by answer with class colors.",
+            "Officers can add events from the Calendar tab: title, sign-up event or announcement, type, day, start time (realm time) and a description. They land in the game's calendar, so guildmates without the addon see them too.",
+            "Roles: pick Tank, Healer or DPS on an event (top right). Who is coming shows each person's class and role icons, and the top line counts the roles and classes of everyone going. Your last pick fills in by itself when you sign up. Roles are shared with guildmates who run Cys's Guild Hall.",
+            "Open it with /guildhall calendar.",
+        },
+    },
     { version = "0.3.19",
         improved = {
             "Can make it is tidier: when a guildmate's main can make the item, the line shows only the main with the main's own skill. Alt names show only when just an alt can make it (alt of Main Name). Hover a line to see every character.",

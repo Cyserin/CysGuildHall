@@ -2,6 +2,12 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 0.4.0
+- **Calendar tab**: the guild's events for the next 30 days, read from the game's calendar. Pick one to sign up, go tentative or remove yourself (or accept / tentative / decline an invite), and see who is coming grouped by answer with class colors.
+- Officers can **add events** from the tab: title, sign-up event or announcement, type, day, start time (realm time), description. They are real guild calendar events, so guildmates without the addon see them in the game's calendar.
+- **Roles**: pick Tank / Healer / DPS on an event. Who is coming shows class + role icons per person, and a makeup line counts roles and classes of everyone going. Your last pick is used when you sign up. Shared with guildmates who run the addon (new messages E / F; older versions ignore them).
+- `/guildhall calendar` opens it.
+
 ## 0.3.19
 - **Tidier Can make it**: when a guildmate's main can make the item, the line shows only the main (with the main's own skill). An alt's name shows only when just that alt can make it ("alt of Main Name"). Hover still lists every character.
 - Item tooltips drop the "+1 alt" tag the same way.

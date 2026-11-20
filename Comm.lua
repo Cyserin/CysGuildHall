@@ -658,6 +658,10 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         OnClaim(text, sender, senderRealm)
     elseif kind == "U" then
         OnDue(text)
+    elseif kind == "E" then
+        if GH.CalPanel and GH.CalPanel.OnRole then GH.CalPanel.OnRole(text, sender) end
+    elseif kind == "F" then
+        if GH.CalPanel and GH.CalPanel.OnAsk then GH.CalPanel.OnAsk(text) end
     elseif kind == "Q" then
         local id, dl = text:match("^Q~([^~]+)~(%a)$")
         if id and GH.Requests then GH.Requests.SetDelivery(id, dl) end
