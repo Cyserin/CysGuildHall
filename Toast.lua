@@ -47,7 +47,7 @@ local function Build()
     frame.text:SetPoint("RIGHT", -10, 0)
     frame.text:SetJustifyH("LEFT")
     frame.text:SetWordWrap(true)
-    if frame.text.SetMaxLines then frame.text:SetMaxLines(2) end
+    if frame.text.SetMaxLines then frame.text:SetMaxLines(3) end
 
     frame:SetScript("OnDragStart", function(f) f.dragging = true; f:StartMoving() end)
     frame:SetScript("OnDragStop", function(f)
@@ -66,8 +66,23 @@ local function Build()
         end
         f.t = IN + HOLD   -- start fading out
     end)
-    frame:SetScript("OnEnter", function(f) f.hover = true end)
-    frame:SetScript("OnLeave", function(f) f.hover = nil end)
+    frame:SetScript("OnEnter", function(f)
+        f.hover = true
+        -- recipe loot toasts: hover shows the item itself
+        if f.item and GameTooltip.SetItemByID then
+            GameTooltip:SetOwner(f, "ANCHOR_BOTTOM", 0, -4)
+            GameTooltip:SetItemByID(f.item)
+            GameTooltip:Show()
+        end
+    end)
+    frame:SetScript("OnLeave", function(f)
+        f.hover = nil
+        if GameTooltip:IsOwned(f) then GameTooltip:Hide() end
+    end)
+    frame:SetScript("OnHide", function(f)
+        f.hover = nil
+        if GameTooltip:IsOwned(f) then GameTooltip:Hide() end
+    end)
     frame:SetScript("OnUpdate", function(f, elapsed)
         if f.dragging then return end
         if not (f.hover and f.t > IN and f.t < IN + HOLD) then f.t = f.t + elapsed end
@@ -113,12 +128,13 @@ function Toast.Next()
     frame:SetHeight(math.max(46, math.floor(h + 0.5) + 33))
     frame.pid = e.pid
     frame.onClick = e.onClick
+    frame.item = e.item
     frame.t = 0
     frame:SetAlpha(0)
     frame:Show()
 end
 
-function Toast.Add(text, icon, pid, onClick)
+function Toast.Add(text, icon, pid, onClick, item)
     if not GH.db or not GH.db.settings.toasts then return end
     if #queue >= MAX_QUEUE then
         -- a burst: the rest folds into one closing line
@@ -131,7 +147,7 @@ function Toast.Add(text, icon, pid, onClick)
         last.text = ("+%d more guild crafting %s - open /guildhall to see them."):format(last.more, last.more == 1 and "update" or "updates")
         return
     end
-    queue[#queue + 1] = { text = text, icon = icon, pid = pid, onClick = onClick }
+    queue[#queue + 1] = { text = text, icon = icon, pid = pid, onClick = onClick, item = item }
     Toast.Next()
 end
 
@@ -176,14 +192,57 @@ end
 --------------------------------------------------------------------------------
 -- Recipe items nobody in the guild knows: whoever loots one tells the guild
 --------------------------------------------------------------------------------
+-- The recipe item's name in its quality color
+local function ItemColored(itemID, name)
+    local q = itemID and C_Item.GetItemQualityByID and select(2, pcall(C_Item.GetItemQualityByID, itemID))
+    local c = type(q) == "number" and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]
+    if c and c.hex then return c.hex .. name .. "|r" end
+    return "|cffffffff" .. name .. "|r"
+end
+
+local function RecipeProf(rid, c)
+    if c and c.p then return c.p end
+    for pid, list in pairs(GH.db.allRecipes or {}) do
+        for _, id in ipairs(list) do if id == rid then return pid end end
+    end
+end
+
+-- What the recipe teaches: "Tailoring - makes Red Linen Robe (Chest)"
+local function LootDetail(itemID, name)
+    if not GH.Index or not GH.Prof then return nil end
+    local ok, gap, rid = pcall(GH.Index.RecipeItemGap, itemID, name)
+    if not ok or not rid then return nil end
+    local c = GH.Prof.Resolve(rid)
+    if not c then return nil end
+    local pid = RecipeProf(rid, c)
+    local prof = pid and GH.ProfName(pid)
+    local what
+    if c.o then
+        local product = GH.Prof.ItemName and GH.Prof.ItemName(c.o)
+        if (not product or product == "") then product = C_Item.GetItemNameByID(c.o) end
+        if product and product ~= "" then
+            local _, cat = GH.Index.Category(rid)
+            what = "makes " .. ItemColored(c.o, product) .. "|cffd6c49e"
+            if cat and cat ~= "" and cat ~= "Enchants and other" then what = what .. " (" .. cat .. ")" end
+        end
+    elseif c.n and c.n ~= "" then
+        what = "teaches " .. c.n
+    end
+    if prof and what then return prof .. " - " .. what, pid end
+    return what or prof, pid
+end
+
 local function LootToast(who, itemID, name)
     local text
+    local item = ItemColored(itemID, name)
     if who == GH.Me() then
-        text = ("You looted %s - not learned in the guild."):format(name)
+        text = ("You looted %s - not learned in the guild."):format(item)
     else
-        text = ("|cffffd100%s|r looted %s - not learned in the guild."):format(GH.Short(who), name)
+        text = ("|cffffd100%s|r looted %s - not learned in the guild."):format(GH.Short(who), item)
     end
-    Toast.Add(text, ItemIcon(itemID), nil, OpenTab("gaps"))
+    local detail = LootDetail(itemID, name)
+    if detail then text = text .. "\n|cffd6c49e" .. detail .. "|r" end
+    Toast.Add(text, ItemIcon(itemID), nil, OpenTab("gaps"), itemID)
 end
 
 local function Prefix(fmt) return type(fmt) == "string" and fmt:match("^(.-)%%s") or nil end

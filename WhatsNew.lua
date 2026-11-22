@@ -11,6 +11,11 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "1.0.1",
+        improved = {
+            "Recipe loot pop-ups now say what was found: the recipe in its quality color, plus a line with the profession and what it makes (for example Tailoring - makes Red Linen Robe). Hover the pop-up to see the full item tooltip.",
+        },
+    },
     { version = "1.0.0",
         added = {
             "Roster tab: every member with alts folded under their main, level, rank, professions and when they were last on. Members who run Cys's Guild Hall carry its seal. Pick one to see their notes, alts and every character's professions and skill. Search by name, rank or profession, or show online only.",
