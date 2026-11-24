@@ -157,10 +157,16 @@ local SORTS = {
 local function List()
     local out, total, on, users = {}, 0, 0, 0
     local q = state.query:lower()
+    -- addon users: one per player (counted on the main, even if only an alt runs it),
+    -- whether or not alts are grouped in the list
+    local mains = {}
+    for full in pairs(GH.roster) do
+        if Version(full) then mains[(GH.altMainAll or {})[full] or full] = true end
+    end
+    for _ in pairs(mains) do users = users + 1 end
     for _, p in ipairs(Build()) do
         total = total + 1
         if p.online then on = on + 1 end
-        if p.ver then users = users + 1 end
         if (not state.online or p.online) and Matches(p, q) then out[#out + 1] = p end
     end
     table.sort(out, SORTS[state.sort] or SORTS.online)

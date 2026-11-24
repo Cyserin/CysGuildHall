@@ -15,7 +15,7 @@ WN.ENTRIES = {
         improved = {
             "Craft requests placed while you were offline show up a few seconds after you log in, all together, instead of trickling in one by one. Several at once give one chat line and one pop-up instead of one each.",
             "Can make it is a scroll list: every crafter, not just the first five. Scroll with the mouse wheel or the thin bar on the right; the heading shows how many there are.",
-            "Roster tab: the seal legend counts how many members run Cys's Guild Hall.",
+            "Roster tab: the seal legend counts how many players run Cys's Guild Hall (one per player: alts are not counted on their own).",
         },
         fixed = {
             "Options: the Guild Hall versions list stays inside the window (it scrolls now).",

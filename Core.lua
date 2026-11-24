@@ -284,15 +284,19 @@ function GH.BuildAlts()
     local lower = {}
     for full, e in pairs(GH.roster) do lower[full:lower()] = e end
     GH.rosterLower = lower
-    if GH.db and GH.db.settings.altGroup then
-        for full, e in pairs(GH.roster) do
-            if GH.IsAltRank(e.rankName) then
-                local main = NoteMain(e.note, full) or NoteMain(e.onote, full)
-                if main then map[full] = main end
-            end
+    -- every known alt -> main, whatever the grouping setting (counts use it)
+    local all = {}
+    for full, e in pairs(GH.roster) do
+        if GH.IsAltRank(e.rankName) then
+            local main = NoteMain(e.note, full) or NoteMain(e.onote, full)
+            if main then all[full] = main end
         end
     end
+    if GH.db and GH.db.settings.altGroup then
+        for k, v in pairs(all) do map[k] = v end
+    end
     GH.altMain = map
+    GH.altMainAll = all
 end
 GH.rosterLower = {}
 
