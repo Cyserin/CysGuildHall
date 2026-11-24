@@ -1092,6 +1092,7 @@ function SetTab(tab)
     state.offset = 0
     if tab == "craft" or tab == "gaps" then state.req = nil end
     frame.options:SetShown(tab == "options")
+    if frame.altsPanel then frame.altsPanel:Hide() end
     if frame.prep then frame.prep:SetShown(tab == "prep") end
     if frame.cal then frame.cal:SetShown(tab == "cal") end
     if frame.roster then frame.roster:SetShown(tab == "roster") end
@@ -1109,7 +1110,7 @@ end
 --------------------------------------------------------------------------------
 -- Options panel (covers the list + detail while the Options tab is on)
 --------------------------------------------------------------------------------
-local OPT_ROWS = 6
+local OPT_ROWS = 9
 local function DoneFmt(v)
     if v >= 24 then return v == 24 and "1 day" or (v / 24 .. " days") end
     return v == 1 and "1 hour" or (v .. " hours")
@@ -1273,75 +1274,21 @@ function BuildOptions()
     opt.empty:SetPoint("CENTER")
     opt.empty:SetWidth(280)
 
-    -- Your main & alts: shared with the guild so everyone's lists group your characters
-    local ml = Label(opt, "Your main & alts")
-    ml:SetPoint("TOPLEFT", field, "BOTTOMLEFT", 0, -16)
-    local mt = S.Text(opt, 11, T.text)
-    mt:SetPoint("TOPLEFT", ml, "BOTTOMLEFT", 0, -12)
-    mt:SetText("Main")
-    opt.mainDd = S.Dropdown(opt, 200, 20, function()
-        local chars, _, guess = GH.MyChars()
-        local items = { { "", "Highest level (" .. GH.Short(guess) .. ")" } }
-        local all = {}
-        for _, c in ipairs(chars) do all[#all + 1] = c end
-        table.sort(all)
-        for _, c in ipairs(all) do items[#items + 1] = { c, GH.Short(c) } end
-        return items
-    end, function()
-        local my = GH.MyAltsCfg()
-        return my and my.main or ""
-    end, function(v)
-        local my = GH.MyAltsCfg()
-        if not my then return end
-        my.main = (v ~= "") and v or nil
-        GH.PublishMyAlts()
-        PaintOptions()
-    end)
-    opt.mainDd:SetPoint("LEFT", mt, "LEFT", 44, 0)
+    -- Your main & alts: its own page (button), with a one-line summary here
+    local ab = S.Button(opt, 160, 22, "Your main & alts")
+    ab:SetPoint("TOPLEFT", field, "BOTTOMLEFT", 0, -14)
+    ab:SetScript("OnClick", function() W.OpenAlts() end)
     opt.altsText = S.Text(opt, 11, SOFT)
-    opt.altsText:SetPoint("TOPLEFT", mt, "BOTTOMLEFT", 0, -12)
-    opt.altsText:SetWidth(320)
-    opt.altsText:SetJustifyV("TOP")
-    -- add an alt by name (e.g. one that has not run the addon yet)
-    local add = S.EditBox(opt, 150, 20)
-    add:SetPoint("TOPLEFT", opt.altsText, "BOTTOMLEFT", 0, -8)
-    add.hint:SetText("Add an alt: First Last")
-    add:SetScript("OnTextChanged", function(e) e.hint:SetShown(e:GetText() == "") end)
-    local function DoAdd()
-        local text = add:GetText()
-        add:SetText("")
-        add:ClearFocus()
-        local full, why = GH.AddMyAlt(text)
-        if not full and why then GH.Print(why) end
-        PaintOptions()
-    end
-    add:SetScript("OnEnterPressed", DoAdd)
-    local addBtn = S.Button(opt, 44, 20, "Add")
-    addBtn:SetPoint("LEFT", add, "RIGHT", 4, 0)
-    addBtn:SetScript("OnClick", DoAdd)
-    opt.takeOut = S.Dropdown(opt, 118, 20, function()
-        local items = {}
-        local chars = GH.MyChars()
-        for i = 2, #chars do items[#items + 1] = { chars[i], GH.Short(chars[i]) } end
-        return items
-    end, function() return "" end, function(v)
-        GH.RemoveMyAlt(v)
-        PaintOptions()
-    end)
-    opt.takeOut.placeholder = "Take one out"
-    opt.takeOut:SetPoint("LEFT", addBtn, "RIGHT", 4, 0)
-    opt.takeOut:Refresh()
-    local mh = S.Text(opt, 10, T.dim)
-    mh:SetPoint("TOPLEFT", add, "BOTTOMLEFT", 0, -8)
-    mh:SetWidth(320)
-    mh:SetText("Characters on this account join by themselves. The guild sees your alts under your main.")
+    opt.altsText:SetPoint("LEFT", ab, "RIGHT", 10, 0)
+    opt.altsText:SetWidth(150)
+    opt.altsText:SetWordWrap(false)
 end
 
 -- Who runs which version: newer than yours green, older soft red, same parchment
 local VERS_ROW = 16
 local function Hex(c) return ("%02x%02x%02x"):format(math.floor(c[1] * 255), math.floor(c[2] * 255), math.floor(c[3] * 255)) end
 function PaintVersions(opt)
-    -- grouped by player: main first, its alts indented under it; your own group on top
+    -- one line per player (alts fold into their main); yours on top
     local function VerCol(v)
         if v and GH.VersionNewer(v, GH.version) then return { 0.4, 0.9, 0.4 } end
         if v and not GH.VersionNewer(GH.version, v) then return SOFT end
@@ -1374,26 +1321,12 @@ function PaintVersions(opt)
         end
         return a.main < b.main
     end)
+    -- one line per player: the main's name with the newest version any of its characters runs
     local lines = {}
     for _, gr in ipairs(groups) do
-        local mainEntry
-        for _, e in ipairs(gr.chars) do if GH.RosterName(e.name) == gr.main then mainEntry = e end end
-        table.sort(gr.chars, function(a, b) return a.name < b.name end)
         local cr, cg, cb = GH.ClassColor(gr.main)
-        if mainEntry then
-            lines[#lines + 1] = ("|cff%s%s|r%s  |cff%s%s|r"):format(Hex({ cr, cg, cb }), GH.Short(gr.main),
-                mainEntry.me and " (you)" or "", Hex(VerCol(mainEntry.v)), mainEntry.v or "0.3.11 or older")
-        else
-            -- the main does not run the addon: name only
-            lines[#lines + 1] = ("|cff%s%s|r"):format(Hex({ cr, cg, cb }), GH.Short(gr.main))
-        end
-        for _, e in ipairs(gr.chars) do
-            if e ~= mainEntry then
-                local ar, ag, ab = GH.ClassColor(e.name)
-                lines[#lines + 1] = ("    |cff%salt|r |cff%s%s|r%s  |cff%s%s|r"):format(Hex(SOFT), Hex({ ar, ag, ab }), GH.Short(e.name),
-                    e.me and " (you)" or "", Hex(VerCol(e.v)), e.v or "0.3.11 or older")
-            end
-        end
+        lines[#lines + 1] = ("|cff%s%s|r%s  |cff%s%s|r"):format(Hex({ cr, cg, cb }), GH.Short(gr.main),
+            gr.mine and " (you)" or "", Hex(VerCol(gr.best)), gr.best or "0.3.11 or older")
     end
     if #entries == 1 then lines[#lines + 1] = "|cff" .. Hex(SOFT) .. "No other Guild Hall users seen yet.|r" end
     -- as many rows as fit the box (its height is only known once the window is laid out)
@@ -1453,15 +1386,183 @@ function PaintOptions()
     end
     opt.empty:SetText(#list == 0 and "No professions read yet.\nOpen each profession window once." or "")
     PaintVersions(opt)
-    -- main & alts
-    opt.mainDd:Refresh()
-    opt.takeOut:Refresh()
+    local chars = GH.MyChars()
+    opt.altsText:SetText("Main: " .. GH.Short(chars[1]) .. (#chars > 1 and ("  +" .. (#chars - 1) .. " alts") or ""))
+end
+
+--------------------------------------------------------------------------------
+-- Your main & alts page (covers the window; opened from Options or /guildhall alts)
+--------------------------------------------------------------------------------
+local ALT_ROWS = 9
+local PaintAlts
+
+local function BuildAlts()
+    local T = S.T()
+    local p = CreateFrame("Frame", nil, frame)
+    p:SetPoint("TOPLEFT", 1, -31)
+    p:SetPoint("BOTTOMRIGHT", -1, 1)
+    p:SetFrameLevel(frame:GetFrameLevel() + 40)
+    p:EnableMouse(true)
+    S.Tex(p, "BACKGROUND", { T.bg[1], T.bg[2], T.bg[3], 1 }):SetAllPoints()
+    p:Hide()
+    p:SetScript("OnShow", function() PaintAlts() end)
+    frame.altsPanel = p
+
+    local title = Label(p, "Your main & alts")
+    title:SetPoint("TOPLEFT", 16, -16)
+    local back = S.Button(p, 70, 20, "Back")
+    back:SetPoint("TOPRIGHT", -16, -12)
+    back:SetScript("OnClick", function() p:Hide() end)
+    local intro = S.Text(p, 11, SOFT)
+    intro:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    intro:SetWidth(640)
+    intro:SetText("Pick your main and list your alts. Your guildmates' Guild Hall shows your alts under your main in Can make it, the Roster and the versions list, with no guild rank or note needed. Characters on this account that run Cys's Guild Hall join by themselves; add any other alt by name.")
+
+    local mt = S.Text(p, 12, T.text)
+    mt:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -16)
+    mt:SetText("Main")
+    p.mainDd = S.Dropdown(p, 220, 20, function()
+        local chars, _, guess = GH.MyChars()
+        local items = { { "", "Highest level (" .. GH.Short(guess) .. ")" } }
+        local all = {}
+        for _, c in ipairs(chars) do all[#all + 1] = c end
+        table.sort(all)
+        for _, c in ipairs(all) do items[#items + 1] = { c, GH.Short(c) } end
+        return items
+    end, function()
+        local my = GH.MyAltsCfg()
+        return my and my.main or ""
+    end, function(v)
+        local my = GH.MyAltsCfg()
+        if not my then return end
+        my.main = (v ~= "") and v or nil
+        GH.PublishMyAlts()
+        PaintAlts()
+    end)
+    p.mainDd:SetPoint("LEFT", mt, "LEFT", 50, 0)
+
+    -- characters: one row each, main first
+    local field = S.Panel(p, T.field)
+    field:SetPoint("TOPLEFT", mt, "BOTTOMLEFT", 0, -16)
+    field:SetSize(480, ALT_ROWS * 24 + 8)
+    field:EnableMouseWheel(true)
+    p.off = 0
+    field:SetScript("OnMouseWheel", function(_, delta)
+        p.off = math.max(0, math.min(p.max or 0, p.off - delta))
+        PaintAlts()
+    end)
+    p.sb = S.ScrollBar(field, function(off) p.off = off; PaintAlts() end)
+    p.sb:SetPoint("TOPRIGHT", -3, -3)
+    p.sb:SetPoint("BOTTOMRIGHT", -3, 3)
+    p.rows = {}
+    for i = 1, ALT_ROWS do
+        local r = CreateFrame("Frame", nil, field)
+        r:SetHeight(24)
+        r:SetPoint("TOPLEFT", 8, -4 - (i - 1) * 24)
+        r:SetPoint("RIGHT", field, "RIGHT", -16, 0)
+        r.btn = S.Button(r, 70, 18, "Remove")
+        r.btn:SetPoint("RIGHT")
+        r.src = S.Text(r, 11, T.dim, "RIGHT")
+        r.src:SetPoint("RIGHT", r.btn, "LEFT", -10, 0)
+        r.src:SetWidth(120)
+        r.tag = S.Text(r, 11, T.accent)
+        r.tag:SetPoint("LEFT", 190, 0)
+        r.lvl = S.Text(r, 11, SOFT)
+        r.lvl:SetPoint("LEFT", 150, 0)
+        r.name = S.Text(r, 12, T.text)
+        r.name:SetPoint("LEFT")
+        r.name:SetWidth(144)
+        r.name:SetWordWrap(false)
+        -- two clicks: "Remove" then "Sure?" (resets after 3 seconds)
+        r.btn:SetScript("OnClick", function(b)
+            if not r.full then return end
+            if b.armed then
+                b.armed = nil
+                GH.RemoveMyAlt(r.full)
+                PaintAlts()
+            else
+                b.armed = true
+                b:SetLabel("|cffff4040Sure?|r")
+                C_Timer.After(3, function()
+                    if b.armed then b.armed = nil; b:SetLabel("Remove") end
+                end)
+            end
+        end)
+        p.rows[i] = r
+    end
+
+    -- add an alt by name
+    local add = S.EditBox(p, 220, 22)
+    add:SetPoint("TOPLEFT", field, "BOTTOMLEFT", 0, -12)
+    add.hint:SetText("Add an alt: First Last")
+    add:SetScript("OnTextChanged", function(e) e.hint:SetShown(e:GetText() == "") end)
+    local function DoAdd()
+        local text = add:GetText()
+        add:SetText("")
+        add:ClearFocus()
+        local full, why = GH.AddMyAlt(text)
+        if not full and why then GH.Print(why) end
+        PaintAlts()
+    end
+    add:SetScript("OnEnterPressed", DoAdd)
+    local addBtn = S.Button(p, 60, 22, "Add")
+    addBtn:SetPoint("LEFT", add, "RIGHT", 6, 0)
+    addBtn:SetScript("OnClick", DoAdd)
+    local hint = S.Text(p, 10, T.dim)
+    hint:SetPoint("TOPLEFT", add, "BOTTOMLEFT", 0, -8)
+    hint:SetWidth(480)
+    hint:SetText("Removing a character of this account keeps it out until you add it again by name. Changes reach guildmates online now and the rest when they log in.")
+
+    -- right side: how it works, in short
+    local how = Label(p, "How the guild finds alts")
+    how:SetPoint("TOPLEFT", field, "TOPRIGHT", 24, 0)
+    local howText = S.Text(p, 11, SOFT)
+    howText:SetPoint("TOPLEFT", how, "BOTTOMLEFT", 0, -8)
+    howText:SetWidth(150)
+    howText:SetText("1. Each player's own pick here.\n\n2. A note that says alt and names a member (Bob's alt).\n\n3. A member of the alt rank whose note names a member (Options).\n\nSomeone picked as a main is never made an alt by a note.")
+end
+
+function PaintAlts()
+    local p = frame and frame.altsPanel
+    if not p or not p:IsShown() then return end
+    p.mainDd:Refresh()
     local chars, picked = GH.MyChars()
-    local alts = {}
-    for i = 2, #chars do alts[#alts + 1] = GH.Short(chars[i]) end
-    opt.altsText:SetText((picked and "" or ("Main: " .. GH.Short(chars[1]) .. " (highest level). ")) ..
-        (#alts > 0 and ("Alts: " .. table.concat(alts, ", ")) or "No alts yet."))
-    opt.takeOut:SetActive(#alts > 0)
+    local me = GH.Me()
+    p.max = math.max(0, #chars - ALT_ROWS)
+    p.off = math.max(0, math.min(p.off or 0, p.max))
+    p.sb:Update(p.off, p.max, ALT_ROWS, #chars)
+    for i = 1, ALT_ROWS do
+        local r = p.rows[i]
+        local full = chars[p.off + i]
+        r.full = full
+        r.btn.armed = nil
+        r.btn:SetLabel("Remove")
+        if full then
+            r:Show()
+            local e = GH.RosterEntry(full)
+            local cr, cg, cb = GH.ClassColor(full)
+            r.name:SetText(("|cff%02x%02x%02x%s|r"):format(math.floor(cr * 255), math.floor(cg * 255), math.floor(cb * 255), GH.Short(full)))
+            r.lvl:SetText(e and e.level and ("Level " .. e.level) or "")
+            if p.off + i == 1 then
+                r.tag:SetText(picked and "Main" or "Main (highest level)")
+            else
+                r.tag:SetText("|cffd6c49eAlt|r")
+            end
+            r.src:SetText(full == me and "this character" or (GH.db.mine[full] and "this account" or "added by name"))
+            r.btn:SetShown(#chars > 1)
+        else
+            r:Hide()
+        end
+    end
+end
+
+function W.OpenAlts()
+    if not GH.db then return end
+    if not frame then Build() end
+    frame:Show()
+    if state.tab ~= "options" then SetTab("options") end
+    frame.altsPanel:Show()
+    PaintAlts()
 end
 
 local function Build()
@@ -1821,6 +1922,7 @@ local function Build()
     d.actText:SetWordWrap(false)
 
     BuildOptions()
+    BuildAlts()
     if GH.PrepPanel then frame.prep = GH.PrepPanel.Build(frame) end
     if GH.CalPanel then frame.cal = GH.CalPanel.Build(frame) end
     if GH.RosterPanel then frame.roster = GH.RosterPanel.Build(frame) end
@@ -1887,7 +1989,7 @@ GH.Listen("INDEX", RefreshSoon)
 GH.Listen("NAMES", RefreshSoon)
 GH.Listen("ROSTER", RefreshSoon)
 GH.Listen("ALTS", RefreshSoon)
-GH.Listen("ALTS", function() PaintOptions() end)
+GH.Listen("ALTS", function() PaintOptions(); PaintAlts() end)
 GH.Listen("REQUESTS", RefreshSoon)
 GH.Listen("VERSIONS", function() if PaintOptions then PaintOptions() end end)
 GH.On("BAG_UPDATE_DELAYED", function()
