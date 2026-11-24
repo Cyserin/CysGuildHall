@@ -3,6 +3,10 @@
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
 ## 1.1.0
+- **Level dropdown** on the Crafting tab (next to the search box): A-Z, By level (level needed to use or equip, shown on each line, lowest first) or Up to my level (only what you can use now, highest first). Works on search results and item types.
+- **Craft from the Guild Hall**: when this character knows the recipe and the reagents are in your bags, the bottom button says Open (profession) and then Craft Nx (the Make amount, capped at what your bags make).
+- **Shopping list**: the Shopping list button next to Reagents adds the reagents you are missing for the Make amount. The list opens beside the auction house (Options switch); click a line to search for it, right-click removes it. Lines tick off as the items reach your bags or bank. Prices from Cys's Auction House when installed. `/guildhall shop`.
+- **Guild bank recipes**: opening the guild bank checks the tabs you can see for recipes nobody in the guild has learned: one chat line and a pop-up for new ones (again after a week), and the Gaps detail of that recipe says "In the guild bank". Options switch to post them in guild chat (off by default).
 - **Your main & alts** page (button on the Options tab, or `/guildhall alts`): pick your main, see every character with level and where it came from, add an alt by name or remove one. Every character on your account that runs the addon joins by itself; type a name to add one that doesn't. Shared with the guild (new message A; older versions ignore it), so everyone's lists group your characters without relying on guild ranks.
 - **Better alt detection**: a note that says "alt" and names a member (e.g. "Bob's alt") now counts in any rank, not just the alt rank. Someone marked as a main is never made an alt by a note, and alt-of-an-alt goes up to the real main.
 - **Versions list** (Options): one line per player under the main's name (alts fold in), yours on top.

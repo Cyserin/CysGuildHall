@@ -9,6 +9,10 @@ Works for any guild. Every member who runs it shares the recipes they know, so a
 ## Features
 - **Search any item or recipe** to see who can craft it, online first, with their skill level. Alts share a line with their main: each player picks their main and alts on the Options tab (characters on the same account join by themselves), else a note that says alt and names the main.
 - **Reagents with have / need**: counts from your bags and bank, with a Make -/+ for several crafts.
+- **Level filter**: sort crafts by the level needed to use or equip them, or show only what fits your level.
+- **Craft from the window** when you know the recipe and carry the reagents (it opens your profession window first).
+- **Shopping list** for missing reagents: opens beside the auction house, click a line to search for it (`/guildhall shop`).
+- **Guild bank recipes**: opening the guild bank tells you which recipes in it nobody in the guild has learned (optionally in guild chat).
 - **Professions overview**: every guild profession with its number of crafters and best skill; click one to browse its recipes.
 - **Craft requests**: ask the guild to make something and pick how you want it (mail it to me, or meet to trade); a crafter claims it, marks the mats ready and done.
 - **Materials pop-up**: when a crafter claims your request you see each reagent as needed, (what you have) and what the crafter has, plus what is still short between you two (`/guildhall mats` reopens it).

@@ -553,7 +553,8 @@ end)
 --------------------------------------------------------------------------------
 -- Saved data
 --------------------------------------------------------------------------------
-local DEFAULTS = { tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true, altGroup = true, altRank = "", calRemind = true }
+local DEFAULTS = { tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true, altGroup = true, altRank = "", calRemind = true,
+    craftSort = "name", shopAuto = true, bankShare = false }
 
 GH.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end
@@ -567,6 +568,8 @@ GH.On("ADDON_LOADED", function(name)
     db.quality = db.quality or {}   -- [itemID] = quality (names keep their color while item data reloads)
     db.bind = db.bind or {}         -- [itemID] = bind type (1 = Bind on Pickup: those recipes are hidden)
     db.profNames = db.profNames or {} -- [profID] = name
+    db.lvl = db.lvl or {}           -- [itemID] = level needed to use / equip (0 = none)
+    db.shop = db.shop or {}         -- [full] = { { id, q = still to buy when added, c = count then, by = what for } } (shopping list)
     db.mine = db.mine or {}         -- [full] = true for characters on this account (never pruned)
     db.init = db.init or {}         -- [full] = 1 initialized / 2 set up (first-run welcome)
     db.allRecipes = db.allRecipes or {} -- [profID] = { every recipe ID of that profession, learned or not } (Gaps tab)
@@ -714,13 +717,15 @@ SlashCmdList.CYSGUILDHALL = function(msg)
         if GH.WhatsNew then GH.WhatsNew.Show() end
     elseif msg == "welcome" or msg == "setup" then
         if GH.Welcome then GH.Welcome.Show() end
+    elseif msg == "shop" or msg == "shopping" or msg == "list" then
+        if GH.Mats then GH.Mats.ShowShop() end
     elseif msg == "mats" then
         if not (GH.Mats and GH.Mats.ShowLatest()) then GH.Print("none of your requests has been claimed yet.") end
     elseif msg == "sync" then
         if GH.Comm then GH.Comm.Hello(true) end
         GH.Print("asked the guild for newer crafting data.")
     elseif msg == "help" then
-        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, prep, calendar, roster, alts, mats, gaps, options, versions, news, welcome, minimap, check, sync, tooltip, notify.")
+        GH.Print("/guildhall - open or close the window; /guildhall <item> - search; requests, prep, calendar, roster, alts, mats, shop, gaps, options, versions, news, welcome, minimap, check, sync, tooltip, notify.")
     elseif msg ~= "" then
         if GH.Window then GH.Window.Open(msg) end
     else

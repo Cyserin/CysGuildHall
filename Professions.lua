@@ -270,6 +270,27 @@ local function ScanSoon()
 end
 
 GH.On("TRADE_SKILL_SHOW", ScanSoon)
+
+-- Which profession window is open right now (for the Craft button)
+local profShown = false
+GH.On("TRADE_SKILL_SHOW", function()
+    profShown = true
+    C_Timer.After(0.3, function() GH.Fire("PROFWIN") end)
+end)
+GH.On("TRADE_SKILL_CLOSE", function()
+    profShown = false
+    GH.Fire("PROFWIN")
+end)
+local winTimer
+GH.On("TRADE_SKILL_LIST_UPDATE", function()
+    if not profShown or winTimer then return end
+    winTimer = C_Timer.NewTimer(0.5, function() winTimer = nil; GH.Fire("PROFWIN") end)
+end)
+function P.IsOpen(pid)
+    if not profShown or not CanScan() then return false end
+    local ok, open = pcall(OpenProfession)
+    return ok and open == pid
+end
 GH.On("TRADE_SKILL_LIST_UPDATE", ScanSoon)
 GH.On("NEW_RECIPE_LEARNED", ScanSoon)
 

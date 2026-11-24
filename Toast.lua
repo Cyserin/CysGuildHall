@@ -297,3 +297,91 @@ GH.Listen("LOOTED", function(sender, itemID, name)
     if GH.Index and GH.Index.RecipeItemGap(itemID, name) == false then return end
     LootToast(sender, itemID, name)
 end)
+
+--------------------------------------------------------------------------------
+-- Guild bank: recipe items nobody in the guild has learned
+-- Read when you open the guild bank (tabs you can see). Saved per guild as
+-- g.bank[recipeID] = time last seen (the Gaps detail says "In the guild bank").
+-- New ones get a chat line + pop-up; guild chat only with the Options switch (off by default).
+--------------------------------------------------------------------------------
+local bankTimer, bankOpen
+local BANK_SLOTS = MAX_GUILDBANK_SLOTS_PER_TAB or 98
+local BANK_AGAIN = 7 * 86400   -- tell again about the same recipe after a week
+
+local function ScanBank()
+    local g = GH.Guild()
+    if not g or not GH.Index or not GetNumGuildBankTabs then return end
+    local tabs = GetNumGuildBankTabs() or 0
+    local found, any = {}, false
+    for tab = 1, tabs do
+        local _, _, viewable = GetGuildBankTabInfo(tab)
+        if viewable then
+            for slot = 1, BANK_SLOTS do
+                local link = GetGuildBankItemLink(tab, slot)
+                local id = link and tonumber(link:match("|Hitem:(%d+)"))
+                if id then
+                    any = true
+                    local name = link:match("|h%[(.-)%]|h")
+                    local ok, gap, rid = pcall(GH.Index.RecipeItemGap, id, name)
+                    if ok and gap and rid and not found[rid] then found[rid] = { id = id, link = link, name = name } end
+                end
+            end
+        end
+    end
+    if not any then return end   -- tab contents not here yet
+    local now = GetServerTime()
+    local old = g.bank or {}
+    g.bankTold = g.bankTold or {}
+    local bank, fresh = {}, {}
+    for rid, e in pairs(found) do
+        bank[rid] = now
+        if not old[rid] and now - (g.bankTold[rid] or 0) > BANK_AGAIN then
+            g.bankTold[rid] = now
+            fresh[#fresh + 1] = e
+        end
+    end
+    g.bank = bank
+    if #fresh == 0 then return end
+    table.sort(fresh, function(a, b) return (a.name or "") < (b.name or "") end)
+    local links = {}
+    for _, e in ipairs(fresh) do links[#links + 1] = e.link end
+    GH.Print(("guild bank recipes nobody in the guild has learned: %s"):format(table.concat(links, ", ")))
+    local first = fresh[1]
+    local text = (#fresh == 1) and ("The guild bank has %s - not learned in the guild."):format(ItemColored(first.id, first.name))
+        or ("The guild bank has |cffffd100%d recipes|r nobody in the guild has learned, like %s."):format(#fresh, ItemColored(first.id, first.name))
+    Toast.Add(text, ItemIcon(first.id), nil, OpenTab("gaps"), first.id)
+    if GH.db.settings.bankShare and IsInGuild() then
+        -- chat lines stay under 255 characters: a few links each
+        local line = "Guild bank recipes nobody has learned yet:"
+        local sent = 0
+        for _, l in ipairs(links) do
+            if #line + #l + 1 > 250 then
+                SendChatMessage(line, "GUILD")
+                sent = sent + 1
+                if sent >= 3 then return end
+                line = "More:"
+            end
+            line = line .. " " .. l
+        end
+        SendChatMessage(line, "GUILD")
+    end
+end
+
+local function BankSoon()
+    if not bankOpen then return end
+    if bankTimer then bankTimer:Cancel() end
+    bankTimer = C_Timer.NewTimer(1.5, function() bankTimer = nil; ScanBank() end)
+end
+
+GH.On("GUILDBANKFRAME_OPENED", function()
+    bankOpen = true
+    if GetNumGuildBankTabs and QueryGuildBankTab then
+        for tab = 1, GetNumGuildBankTabs() or 0 do
+            local _, _, viewable = GetGuildBankTabInfo(tab)
+            if viewable then QueryGuildBankTab(tab) end
+        end
+    end
+    BankSoon()
+end)
+GH.On("GUILDBANKBAGSLOTS_CHANGED", BankSoon)
+GH.On("GUILDBANKFRAME_CLOSED", function() bankOpen = false end)

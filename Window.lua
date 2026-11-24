@@ -12,6 +12,7 @@ GH.Index = I
 
 local dirty = true
 local byRecipe, byItem, profs = {}, {}, {}
+local mineKnown = {}   -- [recipeID] = profID: recipes this character knows
 local unresolved, tried = {}, {}
 local working = false
 
@@ -61,6 +62,41 @@ GH.On("ITEM_DATA_LOAD_RESULT", function(id, ok)
     end
 end)
 
+--------------------------------------------------------------------------------
+-- Level needed to use / equip a product (0 = none). Comes with the item data; saved once known (db.lvl).
+--------------------------------------------------------------------------------
+local lvlAsked, lvlTimer = {}, nil
+function I.ReqLevel(itemID)
+    if not itemID or not GH.db then return 0 end
+    local v = GH.db.lvl[itemID]
+    if v then return v end
+    local lv = select(5, ItemInfo(itemID))
+    if lv then
+        GH.db.lvl[itemID] = lv
+        return lv
+    end
+    if not lvlAsked[itemID] then
+        lvlAsked[itemID] = true
+        C_Item.RequestLoadItemDataByID(itemID)
+    end
+    return 0
+end
+
+GH.On("ITEM_DATA_LOAD_RESULT", function(id, ok)
+    if not lvlAsked[id] then return end
+    lvlAsked[id] = nil
+    if not ok then return end
+    local lv = select(5, ItemInfo(id))
+    if lv == nil then return end
+    GH.db.lvl[id] = lv
+    if lv > 1 and not lvlTimer then
+        lvlTimer = C_Timer.NewTimer(0.5, function()
+            lvlTimer = nil
+            GH.Fire("INDEX")
+        end)
+    end
+end)
+
 local Work
 function Work()
     if #unresolved == 0 then working = false; return end
@@ -85,9 +121,10 @@ end
 function I.Build()
     if not dirty then return end
     dirty = false
-    wipe(byRecipe); wipe(byItem); wipe(profs)
+    wipe(byRecipe); wipe(byItem); wipe(profs); wipe(mineKnown)
     local g = GH.Guild()
     if not g or not GH.db then return end
+    local me = GH.Me()
     for name, m in pairs(g.members) do
         for pid, p in pairs(m.profs or {}) do
             local pr = profs[pid]
@@ -98,6 +135,7 @@ function I.Build()
             pr.crafters = pr.crafters + 1
             if (p.s or 0) > pr.best then pr.best, pr.max = p.s or 0, p.m or 0 end
             for _, id in ipairs(p.r or {}) do
+                if name == me then mineKnown[id] = pid end
                 if not I.IsBoP(id) then
                     pr.recipes[id] = true
                     local list = byRecipe[id]
@@ -119,6 +157,12 @@ function I.Build()
         end
     end
     if #unresolved > 0 and not working then C_Timer.After(0, Work) end
+end
+
+-- Profession ID when this character knows the recipe
+function I.IKnow(recipeID)
+    I.Build()
+    return mineKnown[recipeID]
 end
 
 local function SortCrafters(list)
@@ -583,6 +627,34 @@ local function HintText()
     return "Search all guild crafts..."
 end
 
+-- Crafting tab: level filter / sort (settings.craftSort: "name", "lvl" low first, "mine" up to my level, high first)
+local SORTS = { { "name", "A-Z" }, { "lvl", "By level" }, { "mine", "Up to my level" } }
+local function LevelOrder(list)
+    local mode = GH.db.settings.craftSort or "name"
+    if mode == "name" then return list end
+    local my = UnitLevel("player") or 60
+    local out, head = {}, nil
+    for _, r in ipairs(list) do
+        if r.kind == "recipe" then
+            local c = GH.db.recipes[r.id]
+            r.lvl = c and c.o and I.ReqLevel(c.o) or 0
+            if mode ~= "mine" or r.lvl <= my then out[#out + 1] = r end
+        elseif r.kind == "back" then
+            head = r
+        end
+    end
+    local high = mode == "mine"
+    table.sort(out, function(a, b)
+        if a.lvl ~= b.lvl then
+            if high then return a.lvl > b.lvl end
+            return a.lvl < b.lvl
+        end
+        return a.name < b.name
+    end)
+    if head then table.insert(out, 1, head) end
+    return out
+end
+
 local function Rebuild()
     if not frame then return end
     local list = {}
@@ -658,10 +730,12 @@ local function Rebuild()
     elseif state.query ~= "" then
         -- typing always searches the whole guild (the profession / type you were in comes back when cleared)
         for _, r in ipairs(I.Search(state.query)) do list[#list + 1] = r end
+        list = LevelOrder(list)
     elseif state.cat then
         -- one item type: its recipes
         list[1] = { kind = "back" }
         for _, r in ipairs(I.Search("", state.prof, state.cat.key)) do list[#list + 1] = r end
+        list = LevelOrder(list)
     elseif state.prof then
         -- one profession: its item types, under their groups (Armor, Weapon, ...)
         list[1] = { kind = "back" }
@@ -810,10 +884,11 @@ function Paint()
                     end
                 else
                     row.text:SetText(d.name)
+                    local lv = (d.lvl and d.lvl > 1) and ("|cffd6c49e" .. d.lvl .. "|r  ") or ""
                     if d.online > 0 then
-                        row.right:SetText(("|cff4fd66b%d on|r / %d"):format(d.online, d.crafters))
+                        row.right:SetText(("%s|cff4fd66b%d on|r / %d"):format(lv, d.online, d.crafters))
                     else
-                        row.right:SetText(("|cff8a8a8a%d|r"):format(d.crafters))
+                        row.right:SetText(("%s|cff8a8a8a%d|r"):format(lv, d.crafters))
                     end
                 end
             end
@@ -852,6 +927,9 @@ function Paint()
         frame.empty:SetText(state.query == "" and "No craft requests yet.\n\nPick an item on the Crafting tab and press Request." or "No requests match.")
     elseif n == 0 and state.query == "" then
         frame.empty:SetText("No crafters yet.\n\nOpen each of your profession windows once so the addon can read your recipes. Guildmates who run Cys's Guild Hall show up here as they log in.")
+    elseif state.tab == "craft" and GH.db.settings.craftSort == "mine" and (state.query ~= "" or state.cat)
+        and not (list[1] and list[1].kind == "recipe" or list[2] and list[2].kind == "recipe") then
+        frame.empty:SetText("Nothing here for your level.\n\nThe dropdown next to the search box shows all levels.")
     elseif n == 0 then
         frame.empty:SetText("Nobody in the guild can make that yet.")
     else
@@ -873,6 +951,23 @@ local function SetButton(b, act)
     else
         b:Hide()
         b.act = nil
+    end
+end
+
+-- Craft from the window: the profession window has to be open (the game crafts through it)
+local function CraftNow(id, n)
+    if InCombatLockdown() then GH.Print("you can't craft in combat."); return end
+    local T = C_TradeSkillUI
+    if not (T and T.CraftRecipe) then GH.Print("crafting from here isn't available: craft it in your profession window."); return end
+    local ok = pcall(T.CraftRecipe, id, n)
+    if not ok then GH.Print("couldn't start the craft: craft it in your profession window.") end
+end
+local function OpenProf(pid)
+    local T = C_TradeSkillUI
+    local ok, res = false, nil
+    if T and T.OpenTradeSkill then ok, res = pcall(T.OpenTradeSkill, pid) end
+    if not ok or res == false then
+        GH.Print(("open your %s window, then press Craft."):format(GH.ProfName(pid)))
     end
 end
 
@@ -981,6 +1076,11 @@ function PaintDetail()
             d.src:SetText(c.src)
             d.src:SetTextColor(T.text[1], T.text[2], T.text[3])
         end
+        local g = GH.Guild()
+        local seen = g and g.bank and g.bank[id]
+        if seen then
+            d.src:SetText(("|cff4fd66bIn the guild bank|r (seen %s)\n"):format(Ago(seen)) .. (d.src:GetText() or ""))
+        end
     else
         d.cLabel:SetText(#crafters > CRAFTER_ROWS and ("Can make it (%d)"):format(#crafters) or "Can make it")
     end
@@ -1016,6 +1116,16 @@ function PaintDetail()
             r:Hide()
         end
     end
+    -- you know it: how many your bags make (the bank doesn't count for crafting)
+    local knowPid = not req and I.IKnow(id)
+    local canCraft = 0
+    if knowPid and #reagents > 0 then
+        canCraft = math.huge
+        for _, rg in ipairs(reagents) do
+            canCraft = math.min(canCraft, math.floor((C_Item.GetItemCount(rg[1], false) or 0) / rg[2]))
+        end
+    end
+    d.shop:SetShown(not req and missing > 0 and GH.Mats and GH.Mats.ShopAdd and true or false)
     if #reagents == 0 then
         d.status:SetText((c.o or c.n) and "No reagents known for this recipe." or "Recipe details not available yet.")
         d.status:SetTextColor(T.dim[1], T.dim[2], T.dim[3])
@@ -1043,6 +1153,21 @@ function PaintDetail()
         local acts = GH.Requests.Actions(req)
         SetButton(d.btnA, acts[1])
         SetButton(d.btnB, acts[2])
+    elseif knowPid and canCraft > 0 then
+        local n = math.min(make, canCraft)
+        d.actText:SetText(("You know this: your bags make %d."):format(canCraft))
+        d.actText:SetTextColor(T.green[1], T.green[2], T.green[3])
+        if GH.Prof.IsOpen and GH.Prof.IsOpen(knowPid) then
+            SetButton(d.btnA, { ("Craft %dx"):format(n), function() CraftNow(id, n) end })
+        else
+            SetButton(d.btnA, { "Open " .. GH.ProfName(knowPid), function() OpenProf(knowPid) end })
+        end
+        SetButton(d.btnB, nil)
+    elseif knowPid and missing == 0 and #reagents > 0 then
+        d.actText:SetText("You know this: take the reagents out of your bank to craft it.")
+        d.actText:SetTextColor(T.accent[1], T.accent[2], T.accent[3])
+        SetButton(d.btnA, nil)
+        SetButton(d.btnB, nil)
     elseif #crafters == 0 then
         d.actText:SetText("Nobody in the guild can make this yet.")
         d.actText:SetTextColor(T.dim[1], T.dim[2], T.dim[3])
@@ -1097,7 +1222,10 @@ function SetTab(tab)
     if frame.cal then frame.cal:SetShown(tab == "cal") end
     if frame.roster then frame.roster:SetShown(tab == "roster") end
     frame.srcBtn:SetShown(tab == "gaps")
-    frame.search:SetTextInsets(6, tab == "gaps" and (frame.srcBtn:GetWidth() + 10) or 6, 0, 0)
+    frame.lvlBtn:SetShown(tab == "craft")
+    local inset = 6
+    if tab == "gaps" then inset = frame.srcBtn:GetWidth() + 10 elseif tab == "craft" then inset = frame.lvlBtn:GetWidth() + 10 end
+    frame.search:SetTextInsets(6, inset, 0, 0)
     if tab == "options" or tab == "prep" or tab == "cal" or tab == "roster" then frame.search:ClearFocus() end
     if frame.search:GetText() ~= "" then
         frame.search:SetText("")   -- rebuilds through OnTextChanged
@@ -1282,6 +1410,15 @@ function BuildOptions()
     opt.altsText:SetPoint("LEFT", ab, "RIGHT", 10, 0)
     opt.altsText:SetWidth(150)
     opt.altsText:SetWordWrap(false)
+
+    for i, it in ipairs({
+        { "Shopping list opens with the auction house", function() return set.shopAuto end, function(v) set.shopAuto = v end },
+        { "Post guild bank recipes nobody knows in guild chat", function() return set.bankShare end, function(v) set.bankShare = v end },
+    }) do
+        local c = S.Check(opt, it[1], it[2], it[3])
+        c:SetPoint("TOPLEFT", ab, "BOTTOMLEFT", 0, -14 - (i - 1) * 24)
+        opt.checks[#opt.checks + 1] = c
+    end
 end
 
 -- Who runs which version: newer than yours green, older soft red, same parchment
@@ -1677,6 +1814,26 @@ local function Build()
     srcBtn:Hide()
     frame.srcBtn = srcBtn
 
+    -- Crafting: level filter / sort dropdown in the same spot
+    local lvlBtn = S.Dropdown(search, 104, 18, function() return SORTS end,
+        function() return GH.db.settings.craftSort or "name" end, function(v)
+        GH.db.settings.craftSort = v
+        state.offset = 0
+        Rebuild()
+    end)
+    lvlBtn:SetPoint("RIGHT", search, "RIGHT", -3, 0)
+    lvlBtn:HookScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("Level", 1, 1, 1)
+        GameTooltip:AddLine("A-Z: by name.", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:AddLine("By level: the level needed to use or equip it, lowest first.", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:AddLine("Up to my level: only what you can use now, highest first.", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:AddLine("Works on search results and item types.", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:Show()
+    end)
+    lvlBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    frame.lvlBtn = lvlBtn
+
     -- list
     local listBox = S.Panel(frame, T.field)
     listBox:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -6)
@@ -1848,6 +2005,20 @@ local function Build()
     d.mats:SetPoint("LEFT", rLabel, "RIGHT", 10, 0)
     d.mats:SetScript("OnClick", function() if state.req and GH.Mats then GH.Mats.Show(state.req) end end)
     d.mats:Hide()
+    -- missing reagents: add them to your shopping list (searches the auction house)
+    d.shop = S.Button(inner, 96, 18, "Shopping list")
+    d.shop:SetPoint("LEFT", rLabel, "RIGHT", 10, 0)
+    d.shop:SetScript("OnClick", function()
+        if state.selected and GH.Mats and GH.Mats.ShopAdd then GH.Mats.ShopAdd(state.selected, state.make) end
+    end)
+    d.shop:HookScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_TOP")
+        GameTooltip:SetText("Add what you are missing to your shopping list", 1, 1, 1)
+        GameTooltip:AddLine("For the Make amount. At the auction house, click a line to search for it. /guildhall shop opens the list.", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:Show()
+    end)
+    d.shop:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    d.shop:Hide()
     local plus = S.Button(inner, 18, 18, "+")
     plus:SetPoint("RIGHT", inner, "RIGHT", -12, 0)
     plus:SetPoint("TOP", rLabel, "TOP", 0, 3)
@@ -1998,6 +2169,10 @@ GH.Listen("ALTS", function() PaintOptions(); PaintAlts() end)
 GH.Listen("REQUESTS", RefreshSoon)
 GH.Listen("VERSIONS", function() if PaintOptions then PaintOptions() end end)
 GH.On("BAG_UPDATE_DELAYED", function()
+    if frame and frame:IsShown() and state.selected then PaintDetail() end
+end)
+-- the Craft button needs the profession window: repaint when it opens or closes
+GH.Listen("PROFWIN", function()
     if frame and frame:IsShown() and state.selected then PaintDetail() end
 end)
 

@@ -337,3 +337,297 @@ GH.Listen("REQUESTS", function(id)
     end
     if frame and frame:IsShown() and current == id then M.Paint() end
 end)
+
+--------------------------------------------------------------------------------
+-- Shopping list: reagents you are missing, per character. At the auction house a
+-- click on a line searches for it. Each line remembers your count when it was added,
+-- so buying (or looting) the items ticks it off.
+--------------------------------------------------------------------------------
+local SHOP_ROWS = 10
+local SHOP_W = 300
+local shop          -- frame
+local shopAuto      -- shown because the auction house opened
+
+local function ShopList()
+    local me = Me()
+    local l = GH.db.shop[me]
+    if not l then l = {}; GH.db.shop[me] = l end
+    return l
+end
+
+-- still to get for one line
+local function Left(e) return math.max(0, e.q - math.max(0, Count(e.id) - e.c)) end
+
+local function AHOpen()
+    return AuctionHouseFrame and AuctionHouseFrame:IsShown() and true or false
+end
+
+local function Money(c)
+    if not c or c <= 0 then return nil end
+    if GetCoinTextureString then return GetCoinTextureString(c) end
+    return ("%dg %ds %dc"):format(math.floor(c / 10000), math.floor(c / 100) % 100, c % 100)
+end
+
+local function Price(id)
+    local ah = _G.CysAH
+    if not (ah and ah.GetPrice) then return nil end
+    local ok, p = pcall(ah.GetPrice, id)
+    return ok and type(p) == "number" and p or nil
+end
+
+-- the game's auction house: Buy tab, search box, search
+local function SearchAH(id)
+    local name = Name(id)
+    local f = AuctionHouseFrame
+    if not AHOpen() then GH.Print("open the auction house to search for " .. name .. "."); return end
+    if f.SetDisplayMode and AuctionHouseFrameDisplayMode and AuctionHouseFrameDisplayMode.Buy then
+        pcall(f.SetDisplayMode, f, AuctionHouseFrameDisplayMode.Buy)
+    end
+    local bar = f.SearchBar
+    if bar and bar.SearchBox and bar.StartSearch then
+        bar.SearchBox:SetText(name)
+        pcall(bar.StartSearch, bar)
+    else
+        GH.Print("couldn't reach the auction house search: type " .. name .. " there.")
+    end
+end
+
+local function BuildShop()
+    local T = S.T()
+    shop = CreateFrame("Frame", "CysGuildHallShop", UIParent)
+    shop:SetWidth(SHOP_W)
+    shop:SetFrameStrata("HIGH")
+    shop:SetClampedToScreen(true)
+    shop:SetMovable(true)
+    shop:EnableMouse(true)
+    shop:RegisterForDrag("LeftButton")
+    shop:SetScript("OnDragStart", function(f) if not f.docked then f:StartMoving() end end)
+    shop:SetScript("OnDragStop", function(f)
+        f:StopMovingOrSizing()
+        local p, _, _, x, y = f:GetPoint()
+        GH.db.settings.shopPos = { p, x, y }
+    end)
+    S.Tex(shop, "BACKGROUND", T.bg):SetAllPoints()
+    S.Border(shop, T.border)
+
+    local header = CreateFrame("Frame", nil, shop)
+    header:SetPoint("TOPLEFT", 1, -1)
+    header:SetPoint("TOPRIGHT", -1, -1)
+    header:SetHeight(28)
+    S.Tex(header, "BACKGROUND", T.header):SetAllPoints()
+    local title = S.Text(header, 13, T.brand)
+    title:SetPoint("LEFT", 10, 0)
+    title:SetText("Shopping list")
+    local close = S.Button(header, 20, 20, "x")
+    close:SetPoint("RIGHT", -4, 0)
+    close:SetScript("OnClick", function() shop:Hide() end)
+
+    shop.field = S.Panel(shop, T.field)
+    shop.field:SetPoint("TOPLEFT", 10, -38)
+    shop.field:SetPoint("RIGHT", shop, "RIGHT", -10, 0)
+    shop.rows = {}
+    for i = 1, SHOP_ROWS do
+        local r = CreateFrame("Button", nil, shop.field)
+        r:SetHeight(20)
+        r:SetPoint("TOPLEFT", 6, -4 - (i - 1) * 20)
+        r:SetPoint("RIGHT", shop.field, "RIGHT", -6, 0)
+        r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        r.hl = S.Tex(r, "BACKGROUND", T.cardHover)
+        r.hl:SetAllPoints()
+        r.hl:Hide()
+        r.icon = r:CreateTexture(nil, "ARTWORK")
+        r.icon:SetSize(16, 16)
+        r.icon:SetPoint("LEFT", 2, 0)
+        r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        r.right = S.Text(r, 11, SOFT, "RIGHT")
+        r.right:SetPoint("RIGHT", -2, 0)
+        r.text = S.Text(r, 12, T.text)
+        r.text:SetPoint("LEFT", r.icon, "RIGHT", 6, 0)
+        r.text:SetPoint("RIGHT", r.right, "LEFT", -6, 0)
+        r.text:SetWordWrap(false)
+        r:SetScript("OnClick", function(b, btn)
+            if not b.e then return end
+            if btn == "RightButton" then
+                local l = ShopList()
+                for k, e in ipairs(l) do if e == b.e then table.remove(l, k); break end end
+                M.PaintShop()
+            else
+                SearchAH(b.e.id)
+            end
+        end)
+        r:SetScript("OnEnter", function(b)
+            b.hl:Show()
+            if not b.e then return end
+            GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+            GameTooltip:SetItemByID(b.e.id)
+            if b.e.by then GameTooltip:AddLine("For " .. b.e.by, SOFT[1], SOFT[2], SOFT[3], true) end
+            GameTooltip:AddLine(AHOpen() and "Click: search the auction house" or "Open the auction house to search", 1, 0.82, 0)
+            GameTooltip:AddLine("Right-click: remove", 1, 0.82, 0)
+            GameTooltip:Show()
+        end)
+        r:SetScript("OnLeave", function(b) b.hl:Hide(); GameTooltip:Hide() end)
+        shop.rows[i] = r
+    end
+    shop.status = S.Text(shop, 11, SOFT)
+    shop.status:SetPoint("TOPLEFT", shop.field, "BOTTOMLEFT", 0, -6)
+    shop.status:SetPoint("RIGHT", shop, "RIGHT", -10, 0)
+    shop.status:SetSpacing(2)
+    shop.clearAll = S.Button(shop, 70, 20, "Clear all")
+    shop.clearAll:SetPoint("BOTTOMRIGHT", -10, 10)
+    shop.clearAll:SetScript("OnClick", function(b)
+        if b.armed then
+            b.armed = nil
+            b:SetLabel("Clear all")
+            wipe(ShopList())
+            M.PaintShop()
+        else
+            b.armed = true
+            b:SetLabel("|cffff4040Sure?|r")
+            C_Timer.After(3, function() if b.armed then b.armed = nil; b:SetLabel("Clear all") end end)
+        end
+    end)
+    shop.clearDone = S.Button(shop, 80, 20, "Clear done")
+    shop.clearDone:SetPoint("RIGHT", shop.clearAll, "LEFT", -6, 0)
+    shop.clearDone:SetScript("OnClick", function()
+        local l = ShopList()
+        for k = #l, 1, -1 do if Left(l[k]) == 0 then table.remove(l, k) end end
+        M.PaintShop()
+    end)
+    shop:SetScript("OnHide", function(f)
+        GameTooltip:Hide()
+        shopAuto = nil
+    end)
+    shop:Hide()
+end
+
+local function Place()
+    shop:ClearAllPoints()
+    shop.docked = nil
+    if AHOpen() then
+        shop:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", 4, 0)
+        shop.docked = true
+        return
+    end
+    local pos = GH.db.settings.shopPos
+    if pos then shop:SetPoint(pos[1], UIParent, pos[1], pos[2], pos[3]) else shop:SetPoint("CENTER", 300, 60) end
+end
+
+function M.PaintShop()
+    if not shop or not shop:IsShown() then return end
+    local T = S.T()
+    local l = ShopList()
+    -- still needed first, done ones last
+    local open, done = {}, {}
+    for _, e in ipairs(l) do
+        if Left(e) > 0 then open[#open + 1] = e else done[#done + 1] = e end
+    end
+    local order = {}
+    for _, e in ipairs(open) do order[#order + 1] = e end
+    for _, e in ipairs(done) do order[#order + 1] = e end
+    local total, priced = 0, 0
+    for i = 1, SHOP_ROWS do
+        local r = shop.rows[i]
+        local e = order[i]
+        r.e = e
+        if e then
+            r:Show()
+            local left = Left(e)
+            r.icon:SetTexture(C_Item.GetItemIconByID(e.id) or 134400)
+            r.text:SetText(Name(e.id))
+            if left > 0 then
+                r.text:SetTextColor(T.text[1], T.text[2], T.text[3])
+                local p = Price(e.id)
+                local m = p and Money(p * left)
+                r.right:SetText(m and (left .. "  " .. m) or tostring(left))
+            else
+                r.text:SetTextColor(0.55, 0.55, 0.55)
+                r.right:SetText("|cff4fd66bgot it|r")
+            end
+        else
+            r:Hide()
+        end
+    end
+    for _, e in ipairs(open) do
+        local p = Price(e.id)
+        if p then total = total + p * Left(e); priced = priced + 1 end
+    end
+    local shown = math.max(1, math.min(SHOP_ROWS, #order))
+    shop.field:SetHeight(shown * 20 + 8)
+    local lines = {}
+    if #order == 0 then
+        lines[1] = "Nothing on the list. Pick an item on the Crafting tab and press Shopping list."
+    else
+        if #order > SHOP_ROWS then lines[#lines + 1] = ("+%d more (clear done ones to see them)"):format(#order - SHOP_ROWS) end
+        if #open == 0 then
+            lines[#lines + 1] = "|cff4fd66bYou have everything on the list.|r"
+        elseif priced > 0 then
+            lines[#lines + 1] = ("About %s%s (Cys's Auction House prices)"):format(Money(total) or "0",
+                priced < #open and (" for " .. priced .. " of " .. #open) or "")
+        end
+        lines[#lines + 1] = AHOpen() and "Click a line to search; right-click removes it." or "At the auction house, click a line to search for it."
+    end
+    shop.status:SetText(table.concat(lines, "\n"))
+    shop.clearDone:SetShown(#done > 0)
+    shop.clearAll:SetShown(#order > 0)
+    shop:SetHeight(38 + shop.field:GetHeight() + 6 + shop.status:GetStringHeight() + 10 + 20 + 12)
+end
+
+function M.ShowShop()
+    if not GH.db then return end
+    if not shop then BuildShop() end
+    Place()
+    shop:Show()
+    M.PaintShop()
+end
+
+-- Add the reagents you are missing (bags + bank) for count x recipe
+function M.ShopAdd(recipeID, count)
+    local c = GH.Prof.Resolve(recipeID) or {}
+    local l = ShopList()
+    local what = GH.Index and GH.Index.RecipeName(recipeID) or nil
+    local added = 0
+    for _, rg in ipairs(c.r or {}) do
+        local id, need = rg[1], rg[2] * (count or 1)
+        local have = Count(id)
+        if have < need then
+            local miss = need - have
+            local cur
+            for _, e in ipairs(l) do if e.id == id then cur = e; break end end
+            if cur then
+                -- what is still open on the line, plus this
+                cur.q, cur.c = Left(cur) + miss, have
+                if what and cur.by and not cur.by:find(what, 1, true) then cur.by = cur.by .. ", " .. what end
+            else
+                l[#l + 1] = { id = id, q = miss, c = have, by = what and ((count or 1) .. "x " .. what) or nil }
+            end
+            added = added + 1
+        end
+    end
+    if added == 0 then
+        GH.Print("you already have everything for that.")
+    else
+        GH.Print(("added %d %s to your shopping list."):format(added, added == 1 and "reagent" or "reagents"))
+    end
+    M.ShowShop()
+end
+
+GH.On("AUCTION_HOUSE_SHOW", function()
+    if not GH.db or not GH.db.settings.shopAuto then return end
+    C_Timer.After(0.2, function()
+        local any
+        for _, e in ipairs(ShopList()) do if Left(e) > 0 then any = true; break end end
+        if not any or not AHOpen() then return end
+        local was = shop and shop:IsShown()
+        M.ShowShop()
+        if not was then shopAuto = true end
+    end)
+end)
+GH.On("AUCTION_HOUSE_CLOSED", function()
+    if not shop then return end
+    if shopAuto then shop:Hide() elseif shop:IsShown() then Place(); M.PaintShop() end
+end)
+local shopTimer
+GH.On("BAG_UPDATE_DELAYED", function()
+    if not shop or not shop:IsShown() or shopTimer then return end
+    shopTimer = C_Timer.NewTimer(0.5, function() shopTimer = nil; M.PaintShop() end)
+end)
