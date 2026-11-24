@@ -2,7 +2,12 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
-## 1.0.2
+## 1.1.0
+- **Your main & alts** (Options tab): pick your main and add or take out alts. Every character on your account that runs the addon joins by itself; type a name to add one that doesn't. Shared with the guild (new message A; older versions ignore it), so everyone's lists group your characters without relying on guild ranks.
+- **Better alt detection**: a note that says "alt" and names a member (e.g. "Bob's alt") now counts in any rank, not just the alt rank. Someone marked as a main is never made an alt by a note, and alt-of-an-alt goes up to the real main.
+- **Versions list** (Options) grouped by player: main first, alts indented under it, your own characters on top.
+- **Craft requests your alts can make**: the chat line and pop-up say which of your characters can make it ("your alt Bob Smith can make it - log over to craft", or "you can make it on this alt / on your main"); the request detail says the same.
+- Options: your characters' professions list scrolls (mouse wheel or bar) to make room.
 - **Requests at login**: craft requests placed while you were offline arrive a few seconds after login, together, instead of trickling in one by one. Several at once give one chat line and one pop-up. (New message B packs several requests in one; older versions still get them one by one.)
 - **Can make it** is a scroll list (mouse wheel or the thin bar) showing every crafter; the heading shows the count.
 - **Roster tab**: the seal legend counts how many players run Cys's Guild Hall (one per main; alts named in the alt rank's notes don't count on their own, even with alt grouping off).

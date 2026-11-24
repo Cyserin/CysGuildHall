@@ -9,7 +9,8 @@
 --   W / X     "where is recipe N learned?" and the answer (source text + trainers / vendors)
 --   N  someone looted a recipe item nobody in the guild knows (0.3.15+)
 --   T / C     raid prep targets and members' claims on them (0.3.16+, see Prep.lua)
---   B  several craft requests in one message (1.0.2+, only to members whose hello has "&=1")
+--   B  several craft requests in one message (1.1.0+, only to members whose hello has "&=1")
+--   A  a player's main + alts (1.1.0+, only to members whose hello has "!=1")
 -- Whoever hears a hello and holds a newer entry sends it after a short random wait;
 -- if someone else starts sending the same entry first, the others stand down.
 -- Sends are throttled and wait while you are in combat.
@@ -188,6 +189,11 @@ function C.Hello(force)
     items[#items + 1] = "@=1"
     -- "&=1": we understand request bundles (B)
     items[#items + 1] = "&=1"
+    -- "!=1": we understand main + alts links (A); then one item per link we hold
+    items[#items + 1] = "!=1"
+    for acct, L in pairs(g.links or {}) do
+        items[#items + 1] = "!" .. acct .. "=" .. GH.To36(L.rev or 0)
+    end
     for pid, rev in pairs(GH.db.allRev) do
         if GH.db.allRecipes[pid] then items[#items + 1] = "@" .. GH.To36(pid) .. "=" .. GH.To36(rev) end
     end
@@ -308,6 +314,14 @@ local function Answer(sender, theirs)
     if theirs["@"] then
         for pid, rev in pairs(GH.db.allRev) do
             if GH.db.allRecipes[pid] and (theirs["@" .. GH.To36(pid)] or 0) < rev then C.SendList(pid, 6 + math.random() * 14) end
+        end
+    end
+    -- main + alts links, only to members who understand them
+    if theirs["!"] then
+        for acct, L in pairs(g.links or {}) do
+            if (theirs["!" .. acct] or 0) < (L.rev or 0) then
+                C.SendLink(acct, (acct == GH.db.acct) and (0.5 + math.random() * 2) or (3 + math.random() * 9))
+            end
         end
     end
     -- raid prep targets + claims, only to members who understand them
@@ -641,6 +655,47 @@ local function OnSource(text)
 end
 
 --------------------------------------------------------------------------------
+-- Main + alts links: "A~account~rev~main~alt,alt" (rev base 36)
+-- Whoever sends one first wins; others holding the same revision stand down.
+--------------------------------------------------------------------------------
+local pendingLink = {}   -- [account] = { rev, started }
+
+function C.SendLink(acct, delay)
+    local g = GH.Guild()
+    local L = g and g.links and g.links[acct]
+    if not L or not L.m then return end
+    local p = pendingLink[acct]
+    if p and p.rev >= (L.rev or 0) then return end
+    local pend = { rev = L.rev or 0 }
+    pendingLink[acct] = pend
+    C_Timer.After(delay or 0, function()
+        if pendingLink[acct] ~= pend then return end
+        local cur = GH.Guild()
+        cur = cur and cur.links and cur.links[acct]
+        if not cur or (cur.rev or 0) ~= pend.rev then pendingLink[acct] = nil; return end
+        local text = "A~" .. acct .. "~" .. GH.To36(pend.rev) .. "~" .. OutName(cur.m) .. "~"
+        local alts = {}
+        for _, a in ipairs(cur.a or {}) do
+            if #text + #table.concat(alts, ",") + #a + 2 > 250 then break end
+            alts[#alts + 1] = OutName(a)
+        end
+        Push(text .. table.concat(alts, ","), function() return pendingLink[acct] == pend end,
+            function() pendingLink[acct] = nil end, function() pend.started = true end)
+    end)
+end
+
+local function OnLink(text, sender, senderRealm)
+    local acct, rev36, main, list = text:match("^A~(%w+)~(%w+)~([^~]+)~(.*)$")
+    local rev = rev36 and GH.From36(rev36)
+    if not rev then return end
+    local p = pendingLink[acct]
+    if p and not p.started and p.rev <= rev then pendingLink[acct] = nil end
+    local alts = {}
+    for a in list:gmatch("[^,]+") do alts[#alts + 1] = InName(a, senderRealm) end
+    GH.ReceiveLink(acct, rev, InName(main, senderRealm), alts)
+end
+
+--------------------------------------------------------------------------------
 -- Receiving
 --------------------------------------------------------------------------------
 local incoming = {}   -- [name#rev] = { n, got, parts, t }
@@ -703,7 +758,7 @@ local function OnHello(text, sender, senderRealm)
     end
     for nm, rev36 in body:gmatch("([^,=]+)=(%w+)") do
         local first = nm:sub(1, 1)
-        local key = (first == "#" or first == "@" or first == "$" or first == "%" or first == "&") and nm or InName(nm, senderRealm)
+        local key = (first == "#" or first == "@" or first == "$" or first == "%" or first == "&" or first == "!") and nm or InName(nm, senderRealm)
         h.list[key] = GH.From36(rev36) or 0
     end
     if last == "1" then
@@ -726,6 +781,8 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         OnRequest(text, sender, senderRealm)
     elseif kind == "B" then
         OnBundle(text, sender, senderRealm)
+    elseif kind == "A" then
+        OnLink(text, sender, senderRealm)
     elseif kind == "L" then
         OnList(text)
     elseif kind == "W" then

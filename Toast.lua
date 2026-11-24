@@ -187,9 +187,9 @@ local function OpenTab(tab)
     return function() if GH.Window then GH.Window.Open(nil, tab) end end
 end
 
-function Toast.Request(r, name)
+function Toast.Request(r, name, who)
     local c = GH.db.recipes[r.rc]
-    Toast.Add(("|cffffd100%s|r placed a request for %dx %s - you can make it."):format(GH.Short(r.by), r.n or 1, name),
+    Toast.Add(("|cffffd100%s|r placed a request for %dx %s - %s."):format(GH.Short(r.by), r.n or 1, name, who or "you can make it"),
         ItemIcon(c and c.o), nil, OpenTab("requests"))
 end
 
@@ -200,9 +200,12 @@ function Toast.Requests(list)
         if GetServerTime() - (e.r.at or 0) < 1800 then fresh[#fresh + 1] = e end
     end
     if #fresh == 0 then return end   -- old ones synced at login: the chat line is enough
-    if #fresh == 1 then return Toast.Request(fresh[1].r, fresh[1].name) end
+    if #fresh == 1 then return Toast.Request(fresh[1].r, fresh[1].name, fresh[1].who) end
     local a, b = fresh[1], fresh[2]
-    local text = ("|cffffd100%d new craft requests|r you can make: %dx %s, %dx %s"):format(#fresh, a.r.n or 1, a.name, b.r.n or 1, b.name)
+    local alts = 0
+    for _, e in ipairs(fresh) do if not e.here then alts = alts + 1 end end
+    local text = ("|cffffd100%d new craft requests|r you%s can make: %dx %s, %dx %s"):format(#fresh,
+        alts == #fresh and "r other characters" or (alts > 0 and " or your other characters" or ""), a.r.n or 1, a.name, b.r.n or 1, b.name)
     if #fresh > 2 then text = text .. (" and %d more."):format(#fresh - 2) else text = text .. "." end
     local c = GH.db.recipes[a.r.rc]
     Toast.Add(text, ItemIcon(c and c.o), nil, OpenTab("requests"))

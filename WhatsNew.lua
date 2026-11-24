@@ -11,8 +11,14 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
-    { version = "1.0.2",
+    { version = "1.1.0",
+        added = {
+            "Your main & alts (Options tab): pick which character is your main, add an alt by name or take one out. Characters on your account that run Cys's Guild Hall join by themselves. Your guildmates see your alts grouped under your main, no guild rank or note needed.",
+            "Craft requests: if one of your other characters can make it, the chat line and pop-up say which one (for example: your alt Bob Smith can make it - log over to craft). On the right character it says whether you're on your main or an alt.",
+        },
         improved = {
+            "Alts are found better: a note that says alt and names a member (like Bob's alt) counts in any rank now, not just the alt rank.",
+            "Options: the Guild Hall versions list is grouped by player, main first with alts under it.",
             "Craft requests placed while you were offline show up a few seconds after you log in, all together, instead of trickling in one by one. Several at once give one chat line and one pop-up instead of one each.",
             "Can make it is a scroll list: every crafter, not just the first five. Scroll with the mouse wheel or the thin bar on the right; the heading shows how many there are.",
             "Roster tab: the seal legend counts how many players run Cys's Guild Hall (one per player: alts are not counted on their own).",

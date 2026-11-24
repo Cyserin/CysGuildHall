@@ -7,7 +7,7 @@ A guild crafting directory for World of Warcraft Forever, by **Cyserin (Cys)**.
 Works for any guild. Every member who runs it shares the recipes they know, so anyone can search an item and see who in the guild can make it.
 
 ## Features
-- **Search any item or recipe** to see who can craft it, online first, with their skill level. Alts share a line with their main (found from the guild's Alt rank and the note naming the main).
+- **Search any item or recipe** to see who can craft it, online first, with their skill level. Alts share a line with their main: each player picks their main and alts on the Options tab (characters on the same account join by themselves), else a note that says alt and names the main.
 - **Reagents with have / need**: counts from your bags and bank, with a Make -/+ for several crafts.
 - **Professions overview**: every guild profession with its number of crafters and best skill; click one to browse its recipes.
 - **Craft requests**: ask the guild to make something and pick how you want it (mail it to me, or meet to trade); a crafter claims it, marks the mats ready and done.

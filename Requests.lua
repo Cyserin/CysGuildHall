@@ -34,6 +34,37 @@ function R.ICanMake(recipeID)
     return false
 end
 
+-- Does this character (any member) know the recipe?
+local function Knows(full, recipeID)
+    local g = GH.Guild()
+    local m = g and g.members[full]
+    for _, p in pairs(m and m.profs or {}) do
+        for _, id in ipairs(p.r or {}) do
+            if id == recipeID then return true end
+        end
+    end
+    return false
+end
+
+-- Who of yours can make it, as a short note for pop-ups and the request detail:
+-- "you can make it on this alt" / "your alt Bob Smith can make it - log over to craft".
+-- Returns text, whether it is the current character, and the character; nil = none of yours.
+function R.MakerNote(recipeID)
+    local me = GH.Me()
+    local chars = GH.MyChars()
+    local main = chars[1]
+    if R.ICanMake(recipeID) then
+        if #chars < 2 then return "you can make it", true, me end
+        return (main == me) and "you can make it on your main" or "you can make it on this alt", true, me
+    end
+    for _, c in ipairs(chars) do
+        if c ~= me and Knows(c, recipeID) then
+            return ("your %s %s can make it - log over to craft"):format(c == main and "main" or "alt", GH.Short(c)), false, c
+        end
+    end
+    return nil
+end
+
 -- Requests sorted: active first, then newest
 function R.All()
     local out = {}
@@ -155,17 +186,20 @@ local function FlushCanMake()
     if #list == 0 then return end
     local set = GH.db.settings
     if #list == 1 then
-        local r, name = list[1].r, list[1].name
+        local r, name, who = list[1].r, list[1].name, list[1].who
         local dl = R.DeliveryText(r)
         if set.notify then
-            GH.Print(("%s asks for %dx %s%s - you can make it. |cffd9a421/guildhall|r, Requests tab."):format(GH.Short(r.by), r.n, name, dl and (" (" .. dl .. ")") or ""))
+            GH.Print(("%s asks for %dx %s%s - %s. |cffd9a421/guildhall|r, Requests tab."):format(GH.Short(r.by), r.n, name, dl and (" (" .. dl .. ")") or "", who))
         end
         -- pop-up only for requests placed in the last 30 minutes (not old ones synced at login)
-        if GH.Toast and GH.Toast.Request and GetServerTime() - (r.at or 0) < 1800 then GH.Toast.Request(r, name) end
+        if GH.Toast and GH.Toast.Request and GetServerTime() - (r.at or 0) < 1800 then GH.Toast.Request(r, name, who) end
         return
     end
     if set.notify then
-        GH.Print(("%d guild craft requests you can make - |cffd9a421/guildhall|r, Requests tab."):format(#list))
+        local alts = 0
+        for _, e in ipairs(list) do if not e.here then alts = alts + 1 end end
+        GH.Print(("%d guild craft requests you can make%s - |cffd9a421/guildhall|r, Requests tab."):format(#list,
+            alts == #list and " on your other characters" or (alts > 0 and (" (%d on your other characters)"):format(alts) or "")))
     end
     if GH.Toast and GH.Toast.Requests then GH.Toast.Requests(list) end
 end
@@ -174,9 +208,12 @@ local function Notify(r)
     if told[r.id] then return end
     local me = GH.Me()
     local name = GH.Index and GH.Index.RecipeName(r.rc) or ("recipe " .. r.rc)
-    if r.st == "open" and r.by ~= me and R.ICanMake(r.rc) then
+    local who, here = nil, false
+    if r.st == "open" and r.by ~= me then who, here = R.MakerNote(r.rc) end
+    -- never for your own request placed from another of your characters
+    if who and not GH.MyCharSet()[GH.RosterName(r.by)] then
         told[r.id] = true
-        canMake[#canMake + 1] = { r = r, name = name }
+        canMake[#canMake + 1] = { r = r, name = name, who = who, here = here }
         if not canMakeTimer then canMakeTimer = C_Timer.NewTimer(1, FlushCanMake) end
     elseif not GH.db.settings.notify then
         return
