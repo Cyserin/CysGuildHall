@@ -4,6 +4,10 @@
 -- class, level, rank, professions and when they were last on. Members who run
 -- Cys's Guild Hall carry its seal. Right: the picked member in full: notes, alts,
 -- every character's professions and skill, addon version.
+-- View dropdown > Officer: auto-promote rules (level X+ in rank A -> rank B, one
+-- list) and inactive members (whole player offline N+ days). Forever blocks addons from
+-- GuildPromote / GuildUninvite, so the buttons open Blizzard's guild window and say who
+-- to click; the change itself is made there.
 --------------------------------------------------------------------------------
 local GH = CysGuildHall
 local S = GH.Style
@@ -21,7 +25,7 @@ local PROF_ICON = {
 }
 
 local panel
-local state = { sel = nil, offset = 0, query = "", online = false, sort = "online", list = {} }
+local state = { sel = nil, offset = 0, query = "", online = false, sort = "online", list = {}, view = "members", dueOff = 0, idleOff = 0 }
 
 local Paint, PaintList
 
@@ -174,6 +178,177 @@ local function List()
 end
 
 --------------------------------------------------------------------------------
+-- Officer view: auto-promote rules + inactive members
+-- Saved per guild in GH.Guild().off = { rules = { {lvl, from, to} }, days, skip, notice }
+-- (rank indexes: 0 = Guild Master, higher = lower rank)
+--------------------------------------------------------------------------------
+local LEVELS = { 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60 }
+local DAYS = { 7, 14, 21, 30, 45, 60, 90 }
+local MAX_RULES, DUE_ROWS, IDLE_ROWS = 5, 7, 12
+
+-- Blizzard's guild window (offline members shown). Never touches GuildFrame's own
+-- fields: that would taint its Rank dropdown and Remove button.
+local function OpenGuild()
+    if SetGuildRosterShowOffline then SetGuildRosterShowOffline(true) end
+    if GuildFrame and GuildFrame:IsShown() then return end
+    if ToggleGuildFrame then ToggleGuildFrame()
+    elseif ToggleFriendsFrame then ToggleFriendsFrame(3) end
+end
+
+local function Off()
+    local g = GH.Guild()
+    if not g then return nil end
+    g.off = g.off or { rules = {}, days = 30, skip = -1, notice = true }
+    return g.off
+end
+GH.Officer = Off
+
+local function MyRank()
+    local _, _, idx = GetGuildInfo("player")
+    return idx
+end
+
+local function CanPromote() return CanGuildPromote and CanGuildPromote() and true or false end
+local function CanRemove() return CanGuildRemove and CanGuildRemove() and true or false end
+
+local function RankName(idx)
+    for _, r in ipairs(GH.RankNames()) do if r[1] == idx then return r[2] end end
+    return idx and ("Rank " .. (idx + 1)) or "?"
+end
+
+-- members a rule moves up, A-Z
+local function Due()
+    local o, out = Off(), {}
+    if not o then return out end
+    local my = MyRank()
+    for full, e in pairs(GH.roster) do
+        if e.rank and e.level and full ~= GH.Me() then
+            local to
+            for _, r in ipairs(o.rules) do
+                if r.lvl and r.from and r.to and r.to < r.from and e.rank == r.from and e.level >= r.lvl then to = r.to; break end
+            end
+            -- the game only promotes to ranks below your own
+            if to and (not my or to > my) then out[#out + 1] = { full = full, e = e, to = to } end
+        end
+    end
+    -- A-Z, so they're easy to find in the guild window
+    table.sort(out, function(a, b) return GH.Short(a.full):lower() < GH.Short(b.full):lower() end)
+    return out
+end
+
+-- every character of players whose main and alts have all been offline N+ days
+local function Idle()
+    local o, out = Off(), {}
+    if not o then return out end
+    local limit = (o.days or 30) * 24
+    for _, p in ipairs(Build()) do
+        if not p.online and p.lastH and p.lastH >= limit then
+            for _, c in ipairs({ p.full, unpack(p.alts) }) do
+                local e = GH.roster[c]
+                if e and e.rank and e.rank ~= 0 and c ~= GH.Me() and not ((o.skip or -1) >= 0 and e.rank <= o.skip) then
+                    out[#out + 1] = { full = c, e = e, main = c ~= p.full and p.full or nil, lastH = p.lastH, key = p.full }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.lastH ~= b.lastH then return a.lastH > b.lastH end
+        if a.key ~= b.key then return a.key < b.key end
+        if (a.main == nil) ~= (b.main == nil) then return a.main == nil end
+        return a.full < b.full
+    end)
+    return out
+end
+
+-- login notice for officers, once per session
+local told = false
+GH.Listen("ROSTER", function()
+    if told or GH.rosterCount == 0 then return end
+    told = true
+    C_Timer.After(10, function()
+        local o = Off()
+        if not o or not o.notice then return end
+        local parts = {}
+        if CanPromote() and #o.rules > 0 then
+            local n = #Due()
+            if n > 0 then parts[#parts + 1] = n .. (n == 1 and " member is" or " members are") .. " due for promotion" end
+        end
+        if CanRemove() then
+            local n = #Idle()
+            if n > 0 then parts[#parts + 1] = n .. (n == 1 and " character has" or " characters have") .. " been offline " .. (o.days or 30) .. "+ days" end
+        end
+        if #parts > 0 then GH.Print(table.concat(parts, "; ") .. ". /guildhall officer") end
+    end)
+end)
+
+local function PaintOfficer()
+    local f = panel.off
+    local o = Off()
+    if not o then
+        f.L:Hide(); f.R:Hide()
+        f.none:SetText(GH.rosterCount == 0 and "Reading the guild roster..." or "You are not in a guild.")
+        f.none:Show()
+        return
+    end
+    f.none:Hide(); f.L:Show(); f.R:Show()
+    local canP, canR = CanPromote(), CanRemove()
+
+    -- rules
+    local L = f.L
+    for i = 1, MAX_RULES do
+        local row, r = L.rules[i], o.rules[i]
+        row:SetShown(r and true or false)
+        if r then row.lvl:Refresh(); row.from:Refresh(); row.to:Refresh() end
+    end
+    L.add:ClearAllPoints()
+    L.add:SetPoint("TOPLEFT", 10, -56 - #o.rules * 26)
+    L.add:SetShown(#o.rules < MAX_RULES)
+    L.noRules:SetShown(#o.rules == 0)
+
+    local due = Due()
+    local maxOff = math.max(0, #due - DUE_ROWS)
+    if state.dueOff > maxOff then state.dueOff = maxOff end
+    L.dueHead:SetText(("Due for promotion  |cffd6c49e%d|r"):format(#due))
+    for i = 1, DUE_ROWS do
+        local row, d = L.due[i], due[state.dueOff + i]
+        row.data = d
+        row:SetShown(d and true or false)
+        if d then
+            row.name:SetText("|cff" .. ClassHex(d.e.class) .. GH.Short(d.full) .. "|r")
+            row.lvl:SetText(d.e.level or "")
+            row.rank:SetText((d.e.rankName or RankName(d.e.rank)) .. " |cffd9a421>|r " .. RankName(d.to))
+            row.btn:SetActive(canP)
+        end
+    end
+    L.dueNote:SetText(#due == 0 and (#o.rules == 0 and "" or "Nobody is due.")
+        or not canP and "|cffff6060Your rank can't promote members.|r"
+        or maxOff > 0 and ("Scroll for " .. (#due - DUE_ROWS) .. " more.") or "")
+
+    -- inactive
+    local R = f.R
+    R.days:Refresh(); R.skip:Refresh(); R.notice:Refresh()
+    local idle = Idle()
+    maxOff = math.max(0, #idle - IDLE_ROWS)
+    if state.idleOff > maxOff then state.idleOff = maxOff end
+    R.head:SetText(("Inactive members  |cffd6c49e%d|r"):format(#idle))
+    for i = 1, IDLE_ROWS do
+        local row, d = R.rows[i], idle[state.idleOff + i]
+        row.data = d
+        row:SetShown(d and true or false)
+        if d then
+            row.name:SetText("|cff" .. ClassHex(d.e.class) .. GH.Short(d.full) .. "|r" .. (d.main and "  |cff8a8a8aalt|r" or ""))
+            row.lvl:SetText(d.e.level or "")
+            row.rank:SetText(d.e.rankName or "")
+            row.last:SetText(LastText({ lastH = d.lastH }))
+            row.btn:SetActive(canR)
+        end
+    end
+    R.note:SetText(#idle == 0 and "Nobody has been away that long."
+        or not canR and "|cffff6060Your rank can't remove members.|r"
+        or maxOff > 0 and ("Scroll for " .. (#idle - IDLE_ROWS) .. " more.") or "")
+end
+
+--------------------------------------------------------------------------------
 -- Paint
 --------------------------------------------------------------------------------
 local function PaintDetail(p)
@@ -276,6 +451,10 @@ end
 
 function Paint()
     if not panel or not panel:IsShown() then return end
+    local offView = state.view == "off"
+    for _, w in ipairs(panel.memberParts) do w:SetShown(not offView) end
+    panel.off:SetShown(offView)
+    if offView then PaintOfficer(); return end
     local list, total, on, users = List()
     state.list = list
     local sel
@@ -289,6 +468,13 @@ function Paint()
     PaintDetail(sel)
 end
 UI.Paint = Paint
+
+-- "members" or "off" (officer tools)
+function UI.SetView(v)
+    state.view = v
+    if panel and panel.view then panel.view:Refresh() end
+    Paint()
+end
 
 local paintTimer
 function UI.PaintSoon()
@@ -320,7 +506,7 @@ function UI.Build(frame)
     end)
 
     -- filter row
-    local search = S.EditBox(panel, 170, 22)
+    local search = S.EditBox(panel, 130, 22)
     search:SetPoint("TOPLEFT", 10, -10)
     search.hint:SetText("Name, rank or profession")
     search:SetScript("OnTextChanged", function(e)
@@ -336,11 +522,11 @@ function UI.Build(frame)
         state.offset = 0
         Paint()
     end)
-    onl:SetPoint("LEFT", search, "RIGHT", 10, 0)
-    local sort = S.Dropdown(panel, 104, 22, function()
+    onl:SetPoint("LEFT", search, "RIGHT", 8, 0)
+    local sort = S.Dropdown(panel, 96, 22, function()
         return { { "online", "Last online" }, { "name", "Name" }, { "level", "Level" }, { "rank", "Rank" } }
     end, function() return state.sort end, function(v) state.sort = v; Paint() end)
-    sort:SetPoint("TOPLEFT", panel, "TOPLEFT", 326, -10)
+    sort:SetPoint("TOPLEFT", panel, "TOPLEFT", 226, -10)
     sort:HookScript("OnEnter", function(s)
         GameTooltip:SetOwner(s, "ANCHOR_TOP")
         GameTooltip:SetText("Sort by", 1, 1, 1)
@@ -460,6 +646,199 @@ function UI.Build(frame)
     d.text:SetJustifyV("TOP")
     d.text:SetWordWrap(true)
     if d.text.SetSpacing then d.text:SetSpacing(3) end
+
+    panel.memberParts = { search, onl, sort, box, panel.count, key, d }
+
+    -- view: members or officer tools
+    local view = S.Dropdown(panel, 104, 22, function()
+        return { { "members", "Members" }, { "off", "Officer tools" } }
+    end, function() return state.view end, function(v) UI.SetView(v) end)
+    view:SetPoint("TOPLEFT", panel, "TOPLEFT", 326, -10)
+    panel.view = view
+
+    local off = CreateFrame("Frame", nil, panel)
+    off:SetPoint("TOPLEFT", 10, -40)
+    off:SetPoint("BOTTOMRIGHT", -10, 10)
+    off:Hide()
+    panel.off = off
+    off.none = S.Text(off, 11, SOFT, "CENTER")
+    off.none:SetPoint("CENTER")
+
+    local function Wheel(f, key, rows)
+        f:EnableMouseWheel(true)
+        f:SetScript("OnMouseWheel", function(_, delta)
+            state[key] = math.max(0, state[key] - delta * 3)
+            PaintOfficer()
+        end)
+    end
+
+    -- left: auto-promote
+    local L = S.Panel(off, T.field)
+    L:SetPoint("TOPLEFT")
+    L:SetPoint("BOTTOMRIGHT", off, "BOTTOM", -5, 0)
+    off.L = L
+    Wheel(L, "dueOff")
+    local lh = S.Text(L, 13, T.accent)
+    lh:SetPoint("TOPLEFT", 10, -8)
+    lh:SetText("Auto-promote")
+    local help = S.Text(L, 10, T.dim)
+    help:SetPoint("TOPLEFT", 10, -26)
+    help:SetPoint("RIGHT", L, "RIGHT", -10, 0)
+    help:SetWordWrap(true)
+    help:SetText("Who your rules say should move up. Find opens the guild window: click the name there and set the Rank.")
+    L.noRules = S.Text(L, 11, SOFT)
+    L.noRules:SetPoint("TOPLEFT", 110, -60)
+    L.noRules:SetText("No rules yet.")
+    local function RankItems()
+        local out = {}
+        for _, r in ipairs(GH.RankNames()) do out[#out + 1] = { r[1], r[2] } end
+        return out
+    end
+    L.rules = {}
+    for i = 1, MAX_RULES do
+        local row = CreateFrame("Frame", nil, L)
+        row:SetSize(310, 22)
+        row:SetPoint("TOPLEFT", 10, -56 - (i - 1) * 26)
+        local function R() return Off() and Off().rules[i] end
+        row.lvl = S.Dropdown(row, 80, 22, function()
+            local out = {}
+            for _, l in ipairs(LEVELS) do out[#out + 1] = { l, "Level " .. l .. "+" } end
+            return out
+        end, function() return R() and R().lvl end, function(v) if R() then R().lvl = v; Paint() end end)
+        row.lvl:SetPoint("LEFT")
+        row.from = S.Dropdown(row, 92, 22, RankItems, function() return R() and R().from end, function(v) if R() then R().from = v; Paint() end end)
+        row.from.placeholder = "From rank"
+        row.from:SetPoint("LEFT", row.lvl, "RIGHT", 4, 0)
+        local arrow = S.Text(row, 12, T.accent, "CENTER")
+        arrow:SetPoint("LEFT", row.from, "RIGHT", 0, 0)
+        arrow:SetWidth(14)
+        arrow:SetText(">")
+        row.to = S.Dropdown(row, 92, 22, RankItems, function() return R() and R().to end, function(v) if R() then R().to = v; Paint() end end)
+        row.to.placeholder = "To rank"
+        row.to:SetPoint("LEFT", arrow, "RIGHT", 0, 0)
+        local del = S.Button(row, 22, 22, "x")
+        del:SetPoint("LEFT", row.to, "RIGHT", 4, 0)
+        del:SetScript("OnClick", function()
+            local o = Off()
+            if o and o.rules[i] then table.remove(o.rules, i); Paint() end
+        end)
+        L.rules[i] = row
+    end
+    L.add = S.Button(L, 90, 22, "Add rule")
+    L.add:SetScript("OnClick", function()
+        local o = Off()
+        if not o or #o.rules >= MAX_RULES then return end
+        -- start from the two lowest ranks: lowest -> the one above it
+        local ranks = GH.RankNames()
+        local lo, up = ranks[#ranks], ranks[#ranks - 1]
+        o.rules[#o.rules + 1] = { lvl = 25, from = lo and lo[1], to = up and up[1] }
+        Paint()
+    end)
+    local dueTop = -56 - MAX_RULES * 26 - 6
+    L.dueHead = S.Text(L, 12, T.accent)
+    L.dueHead:SetPoint("TOPLEFT", 10, dueTop)
+    L.due = {}
+    for i = 1, DUE_ROWS do
+        local row = CreateFrame("Frame", nil, L)
+        row:SetHeight(22)
+        row:SetPoint("TOPLEFT", 8, dueTop - 18 - (i - 1) * 22)
+        row:SetPoint("RIGHT", L, "RIGHT", -8, 0)
+        row.name = S.Text(row, 11, T.text)
+        row.name:SetPoint("LEFT", 2, 0)
+        row.name:SetWidth(104)
+        row.name:SetWordWrap(false)
+        row.lvl = S.Text(row, 11, T.text, "RIGHT")
+        row.lvl:SetPoint("LEFT", 106, 0)
+        row.lvl:SetWidth(20)
+        row.rank = S.Text(row, 11, SOFT)
+        row.rank:SetPoint("LEFT", 132, 0)
+        row.rank:SetPoint("RIGHT", row, "RIGHT", -54, 0)
+        row.rank:SetWordWrap(false)
+        row.btn = S.Button(row, 48, 20, "Find")
+        row.btn:SetPoint("RIGHT")
+        row.btn:SetScript("OnClick", function()
+            local dd = row.data
+            if not dd then return end
+            OpenGuild()
+            GH.Print(("promote: click |cffffffff%s|r in the guild window and set Rank to |cffffffff%s|r."):format(GH.Short(dd.full), RankName(dd.to)))
+        end)
+        L.due[i] = row
+    end
+    L.dueNote = S.Text(L, 10, T.dim)
+    L.dueNote:SetPoint("BOTTOMLEFT", 10, 8)
+
+    -- right: inactive members
+    local R = S.Panel(off, T.field)
+    R:SetPoint("TOPLEFT", off, "TOP", 5, 0)
+    R:SetPoint("BOTTOMRIGHT")
+    off.R = R
+    Wheel(R, "idleOff")
+    R.head = S.Text(R, 13, T.accent)
+    R.head:SetPoint("TOPLEFT", 10, -8)
+    R.days = S.Dropdown(R, 134, 22, function()
+        local out = {}
+        for _, n in ipairs(DAYS) do out[#out + 1] = { n, "Offline " .. n .. "+ days" } end
+        return out
+    end, function() return Off() and Off().days end, function(v) if Off() then Off().days = v; state.idleOff = 0; Paint() end end)
+    R.days:SetPoint("TOPLEFT", 10, -30)
+    R.skip = S.Dropdown(R, 140, 22, function()
+        local out = { { -1, "Check every rank" } }
+        for _, r in ipairs(GH.RankNames()) do
+            if r[1] > 0 then out[#out + 1] = { r[1], "Skip " .. r[2] .. " and up" } end
+        end
+        return out
+    end, function() return Off() and (Off().skip or -1) end, function(v) if Off() then Off().skip = v; state.idleOff = 0; Paint() end end)
+    R.skip:SetPoint("LEFT", R.days, "RIGHT", 6, 0)
+    R.notice = S.Check(R, "Tell me at login", function() return Off() and Off().notice end, function(v) if Off() then Off().notice = v end end)
+    R.notice:SetPoint("TOPLEFT", 10, -58)
+    R.rows = {}
+    for i = 1, IDLE_ROWS do
+        local row = CreateFrame("Frame", nil, R)
+        row:SetHeight(22)
+        row:SetPoint("TOPLEFT", 8, -82 - (i - 1) * 22)
+        row:SetPoint("RIGHT", R, "RIGHT", -8, 0)
+        row:EnableMouse(true)
+        row.hl = S.Tex(row, "BACKGROUND", T.cardHover)
+        row.hl:SetAllPoints()
+        row.hl:Hide()
+        row.name = S.Text(row, 11, T.text)
+        row.name:SetPoint("LEFT", 2, 0)
+        row.name:SetWidth(112)
+        row.name:SetWordWrap(false)
+        row.lvl = S.Text(row, 11, T.text, "RIGHT")
+        row.lvl:SetPoint("LEFT", 114, 0)
+        row.lvl:SetWidth(20)
+        row.rank = S.Text(row, 11, SOFT)
+        row.rank:SetPoint("LEFT", 140, 0)
+        row.rank:SetWidth(76)
+        row.rank:SetWordWrap(false)
+        row.last = S.Text(row, 11, T.dim, "RIGHT")
+        row.last:SetPoint("RIGHT", row, "RIGHT", -54, 0)
+        row.btn = S.Button(row, 48, 20, "Find")
+        row.btn:SetPoint("RIGHT")
+        row.btn:SetScript("OnClick", function()
+            local dd = row.data
+            if not dd then return end
+            OpenGuild()
+            GH.Print(("remove: click |cffffffff%s|r in the guild window, then Remove. Sorting by Last Online puts them together."):format(GH.Short(dd.full)))
+        end)
+        row:SetScript("OnEnter", function(s)
+            s.hl:Show()
+            local dd = s.data
+            if not dd then return end
+            GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+            GameTooltip:SetText(GH.Short(dd.full), 1, 1, 1)
+            if dd.main then GameTooltip:AddLine("Alt of " .. GH.Short(dd.main), 0.84, 0.77, 0.62) end
+            GameTooltip:AddLine("Player last on " .. LastText({ lastH = dd.lastH }) .. " ago (main and alts)", 0.84, 0.77, 0.62)
+            if dd.e.note and dd.e.note ~= "" then GameTooltip:AddLine("Note: " .. dd.e.note, 1, 1, 1, true) end
+            if dd.e.onote and dd.e.onote ~= "" then GameTooltip:AddLine("Officer note: " .. dd.e.onote, 1, 1, 1, true) end
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", function(s) s.hl:Hide(); GameTooltip:Hide() end)
+        R.rows[i] = row
+    end
+    R.note = S.Text(R, 10, T.dim)
+    R.note:SetPoint("BOTTOMLEFT", 10, 8)
 
     return panel
 end

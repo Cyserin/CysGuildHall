@@ -18,6 +18,7 @@ WN.ENTRIES = {
             "Crafting tab: a Level dropdown next to the search box. By level sorts by the level needed to use or equip it (shown on each line); Up to my level shows only what you can use now, highest first.",
             "Craft it from the Guild Hall: when you know the recipe and your bags hold the reagents, the bottom button opens your profession window, then crafts the Make amount.",
             "Shopping list: the Shopping list button next to Reagents adds what you are missing. It opens next to the auction house; click a line to search for it. Lines tick off as you buy. /guildhall shop opens it any time; with Cys's Auction House it also shows prices.",
+            "Officer tools (Roster tab, View dropdown, or /guildhall officer): auto-promote rules (for example Level 25+ in Initiate goes to Member) list who is due. Inactive members lists everyone whose main and alts have all been offline for the days you pick, with notes on hover. Find opens the guild window and tells you who to click (the game only lets its own guild window promote or remove). Skip your officer ranks with the dropdown. A chat line at login says how many are due or inactive.",
             "Guild bank: when you open it, recipes in it that nobody in the guild has learned get a chat line and a pop-up, and their Gaps detail says In the guild bank. An Options switch (off by default) also posts them in guild chat.",
         },
         improved = {
