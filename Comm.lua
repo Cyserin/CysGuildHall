@@ -9,6 +9,7 @@
 --   W / X     "where is recipe N learned?" and the answer (source text + trainers / vendors)
 --   N  someone looted a recipe item nobody in the guild knows (0.3.15+)
 --   T / C     raid prep targets and members' claims on them (0.3.16+, see Prep.lua)
+--   B  several craft requests in one message (1.0.2+, only to members whose hello has "&=1")
 -- Whoever hears a hello and holds a newer entry sends it after a short random wait;
 -- if someone else starts sending the same entry first, the others stand down.
 -- Sends are throttled and wait while you are in combat.
@@ -61,8 +62,18 @@ local function Pump()
 end
 C_Timer.NewTicker(0.25, Pump)
 
-local function Push(text, check, done, start)
-    queue[#queue + 1] = { text = text, check = check, done = done, start = start }
+-- prio: goes ahead of everything that is not prio (craft requests at login)
+local function Push(text, check, done, start, prio)
+    local m = { text = text, check = check, done = done, start = start, prio = prio }
+    if prio then
+        local at = #queue + 1
+        for i, q in ipairs(queue) do
+            if not q.prio then at = i; break end
+        end
+        table.insert(queue, at, m)
+    else
+        queue[#queue + 1] = m
+    end
 end
 C.Push = Push
 
@@ -175,6 +186,8 @@ function C.Hello(force)
     end
     -- full recipe lists (Gaps); "@=1" tells others we understand lists (older versions skip it)
     items[#items + 1] = "@=1"
+    -- "&=1": we understand request bundles (B)
+    items[#items + 1] = "&=1"
     for pid, rev in pairs(GH.db.allRev) do
         if GH.db.allRecipes[pid] then items[#items + 1] = "@" .. GH.To36(pid) .. "=" .. GH.To36(rev) end
     end
@@ -276,11 +289,21 @@ local function Answer(sender, theirs)
             C.SendEntry(name, delay)
         end
     end
+    -- craft requests first and fast (they matter most at login): ours at once, others' after
+    -- a short random wait so usually one member answers
+    local mine, others = {}, {}
     for id, r in pairs(g.requests or {}) do
         if (theirs["#" .. id] or 0) < (r.rev or 0) then
-            C.SendRequest(r, (r.by == me) and (0.5 + math.random() * 2) or (4 + math.random() * 12))
+            if theirs["&"] then
+                local t = (r.by == me) and mine or others
+                t[#t + 1] = r
+            else
+                C.SendRequest(r, (r.by == me) and (0.3 + math.random()) or (1 + math.random() * 3))
+            end
         end
     end
+    if #mine > 0 then C.SendRequests(mine, 0.3 + math.random() * 0.7) end
+    if #others > 0 then C.SendRequests(others, 1 + math.random() * 2) end
     -- full recipe lists, only to members who understand them
     if theirs["@"] then
         for pid, rev in pairs(GH.db.allRev) do
@@ -311,12 +334,61 @@ function C.SendRequest(r, delay)
         if not cur or cur.rev ~= rev then pendingReq[id] = nil; return end
         local text = table.concat({ "R", id, GH.To36(cur.rc), GH.To36(cur.n), OutName(cur.by), GH.To36(cur.at),
             cur.st, cur.cr and OutName(cur.cr) or "", GH.To36(rev) }, "~")
-        Push(text, function() return pendingReq[id] == rev end, function() pendingReq[id] = nil end)
-        if cur.dl then Push("Q~" .. id .. "~" .. cur.dl) end
+        Push(text, function() return pendingReq[id] == rev end, function() pendingReq[id] = nil end, nil, true)
+        if cur.dl then Push("Q~" .. id .. "~" .. cur.dl, nil, nil, nil, true) end
     end)
 end
 
-local function OnRequest(text, sender, senderRealm)
+-- Several requests packed into as few messages as fit:
+-- "B~id~recipe~qty~by~at~state~crafter~rev~delivery^id~..." (same fields as R, plus delivery)
+local BUNDLE = 240
+function C.SendRequests(list, delay)
+    local want = {}
+    for _, r in ipairs(list) do
+        if r.id and not (pendingReq[r.id] and pendingReq[r.id] >= r.rev) then
+            pendingReq[r.id] = r.rev
+            want[#want + 1] = { id = r.id, rev = r.rev }
+        end
+    end
+    if #want == 0 then return end
+    C_Timer.After(delay or 0, function()
+        local g = GH.Guild()
+        local pieces = {}
+        for _, w in ipairs(want) do
+            local cur = g and g.requests and g.requests[w.id]
+            if pendingReq[w.id] == w.rev and cur and cur.rev == w.rev then
+                pieces[#pieces + 1] = { id = w.id, rev = w.rev, text = table.concat({ w.id, GH.To36(cur.rc), GH.To36(cur.n),
+                    OutName(cur.by), GH.To36(cur.at), cur.st, cur.cr and OutName(cur.cr) or "", GH.To36(w.rev), cur.dl or "" }, "~") }
+            elseif pendingReq[w.id] == w.rev then
+                pendingReq[w.id] = nil
+            end
+        end
+        local function Flush(batch)
+            if #batch == 0 then return end
+            local parts = {}
+            for i, b in ipairs(batch) do parts[i] = b.text end
+            Push("B~" .. table.concat(parts, "^"), function()
+                -- skip the message when someone else already sent every request in it
+                for _, b in ipairs(batch) do if pendingReq[b.id] == b.rev then return true end end
+                return false
+            end, function()
+                for _, b in ipairs(batch) do if pendingReq[b.id] == b.rev then pendingReq[b.id] = nil end end
+            end, nil, true)
+        end
+        local batch, len = {}, 2
+        for _, pc in ipairs(pieces) do
+            if len + #pc.text + 1 > BUNDLE and #batch > 0 then
+                Flush(batch)
+                batch, len = {}, 2
+            end
+            batch[#batch + 1] = pc
+            len = len + #pc.text + 1
+        end
+        Flush(batch)
+    end)
+end
+
+local function OnRequest(text, sender, senderRealm, dl)
     local id, rc, n, by, at, st, cr, rev = text:match("^R~([^~]+)~(%w+)~(%w+)~([^~]+)~(%w+)~(%a+)~([^~]*)~(%w+)$")
     if not id then return end
     rev = GH.From36(rev)
@@ -326,7 +398,17 @@ local function OnRequest(text, sender, senderRealm)
         GH.Requests.Receive({
             id = id, rc = GH.From36(rc), n = GH.From36(n), by = InName(by, senderRealm), at = GH.From36(at),
             st = st, cr = cr ~= "" and InName(cr, senderRealm) or nil, rev = rev,
+            dl = dl and dl ~= "" and GH.Requests.DELIVERY[dl] and dl or nil,
         })
+    end
+end
+
+local function OnBundle(text, sender, senderRealm)
+    local body = text:match("^B~(.*)$")
+    if not body then return end
+    for piece in body:gmatch("[^%^]+") do
+        local head, dl = piece:match("^(.-)~(%a?)$")
+        if head then OnRequest("R~" .. head, sender, senderRealm, dl) end
     end
 end
 
@@ -621,7 +703,7 @@ local function OnHello(text, sender, senderRealm)
     end
     for nm, rev36 in body:gmatch("([^,=]+)=(%w+)") do
         local first = nm:sub(1, 1)
-        local key = (first == "#" or first == "@" or first == "$" or first == "%") and nm or InName(nm, senderRealm)
+        local key = (first == "#" or first == "@" or first == "$" or first == "%" or first == "&") and nm or InName(nm, senderRealm)
         h.list[key] = GH.From36(rev36) or 0
     end
     if last == "1" then
@@ -642,6 +724,8 @@ GH.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
         OnHello(text, sender, senderRealm)
     elseif kind == "R" then
         OnRequest(text, sender, senderRealm)
+    elseif kind == "B" then
+        OnBundle(text, sender, senderRealm)
     elseif kind == "L" then
         OnList(text)
     elseif kind == "W" then
@@ -720,6 +804,6 @@ GH.Listen("ROSTER", function()
         if gone then GH.Fire("DATA") end
     end
     if not helloSent and not helloTimer then
-        helloTimer = C_Timer.NewTimer(15, function() C.Hello() end)
+        helloTimer = C_Timer.NewTimer(3, function() C.Hello() end)
     end
 end)

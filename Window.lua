@@ -928,10 +928,15 @@ function PaintDetail()
         d.sub:SetPoint("RIGHT", d.box, "RIGHT", -12, 0)
     end
 
-    -- crafters
+    -- crafters: a scroll list (wheel or the thin bar), back to the top for a new recipe
+    if d.crFor ~= id then d.crFor, d.crOff = id, 0 end
+    local crMax = math.max(0, #crafters - CRAFTER_ROWS)
+    d.crOff = math.max(0, math.min(d.crOff or 0, crMax))
+    d.crMax = crMax
+    d.crSb:Update(d.crOff, crMax, CRAFTER_ROWS, math.max(1, #crafters))
     for i = 1, CRAFTER_ROWS do
         local r = d.crafters[i]
-        local cr = crafters[i]
+        local cr = crafters[d.crOff + i]
         if cr then
             r:Show()
             r.dot:SetColorTexture(cr.online and T.green[1] or 0.35, cr.online and T.green[2] or 0.35, cr.online and T.green[3] or 0.35)
@@ -951,7 +956,7 @@ function PaintDetail()
     if #crafters == 0 then
         -- nobody can make it: show where the recipe is learned instead
         d.cLabel:SetText("Where to learn it")
-        d.more:SetText("")
+        d.crSb:Hide()
         local lines = GH.Prof.SourceLines(c)
         if lines then
             -- trainers / vendors you visited, Dungeon Journal drops, then the game's own source text
@@ -977,8 +982,7 @@ function PaintDetail()
             d.src:SetTextColor(T.text[1], T.text[2], T.text[3])
         end
     else
-        d.cLabel:SetText("Can make it")
-        d.more:SetText(#crafters > CRAFTER_ROWS and ("+%d more"):format(#crafters - CRAFTER_ROWS) or "")
+        d.cLabel:SetText(#crafters > CRAFTER_ROWS and ("Can make it (%d)"):format(#crafters) or "Can make it")
     end
 
     -- reagents: have (bags + bank) / need
@@ -1182,15 +1186,31 @@ function BuildOptions()
     local help = S.Text(opt, 11, SOFT)
     help:SetPoint("TOPLEFT", sync, "BOTTOMLEFT", 0, -14)
     help:SetWidth(300)
-    help:SetText("Escape closes this window. Type /guildhall help for the chat commands.")
+    help:SetText("Type /guildhall help for the chat commands.")
 
     local vl = Label(opt, "Guild Hall versions")
-    vl:SetPoint("TOPLEFT", help, "BOTTOMLEFT", 0, -16)
-    opt.vers = S.Text(opt, 11, T.text)
-    opt.vers:SetPoint("TOPLEFT", vl, "BOTTOMLEFT", 0, -8)
-    opt.vers:SetWidth(300)
-    opt.vers:SetJustifyV("TOP")
-    opt.vers:SetSpacing(3)
+    vl:SetPoint("TOPLEFT", help, "BOTTOMLEFT", 0, -12)
+    -- a small scroll list that ends above the window's bottom edge
+    local vb = S.Panel(opt, T.field)
+    vb:SetPoint("TOPLEFT", vl, "BOTTOMLEFT", 0, -6)
+    vb:SetPoint("BOTTOM", opt, "BOTTOM", 0, 12)
+    vb:SetWidth(320)
+    vb:EnableMouseWheel(true)
+    vb:SetScript("OnMouseWheel", function(_, delta)
+        opt.versOff = math.max(0, math.min(opt.versMax or 0, (opt.versOff or 0) - delta))
+        PaintVersions(opt)
+    end)
+    opt.versSb = S.ScrollBar(vb, function(off)
+        opt.versOff = off
+        PaintVersions(opt)
+    end)
+    opt.versSb:SetPoint("TOPRIGHT", -3, -3)
+    opt.versSb:SetPoint("BOTTOMRIGHT", -3, 3)
+    opt.versBox = vb
+    -- its height is known only after layout: repaint once it has one
+    vb:SetScript("OnSizeChanged", function() if opt:IsShown() then PaintVersions(opt) end end)
+    opt.versOff = 0
+    opt.versRows = {}
 
     local mine = Label(opt, "Your characters' professions")
     mine:SetPoint("TOPLEFT", 356, -16)
@@ -1240,22 +1260,35 @@ function BuildOptions()
 end
 
 -- Who runs which version: newer than yours green, older soft red, same parchment
-local VERS_LINES = 5
+local VERS_ROW = 16
 local function Hex(c) return ("%02x%02x%02x"):format(math.floor(c[1] * 255), math.floor(c[2] * 255), math.floor(c[3] * 255)) end
 function PaintVersions(opt)
     local lines = { "You: |cff" .. Hex(SOFT) .. tostring(GH.version) .. "|r" }
     local list = GH.Comm and GH.Comm.Versions() or {}
-    for i = 1, math.min(#list, VERS_LINES) do
-        local e = list[i]
+    for _, e in ipairs(list) do
         local col = { 1, 0.45, 0.4 }
         if e.v and GH.VersionNewer(e.v, GH.version) then col = { 0.4, 0.9, 0.4 }
         elseif e.v and not GH.VersionNewer(GH.version, e.v) then col = SOFT end
         local cr, cg, cb = GH.ClassColor(e.name)
         lines[#lines + 1] = ("|cff%s%s|r  |cff%s%s|r"):format(Hex({ cr, cg, cb }), GH.Short(e.name), Hex(col), e.v or "0.3.11 or older")
     end
-    if #list > VERS_LINES then lines[#lines + 1] = ("|cff%s+%d more: /guildhall versions|r"):format(Hex(SOFT), #list - VERS_LINES)
-    elseif #list == 0 then lines[#lines + 1] = "|cff" .. Hex(SOFT) .. "No other Guild Hall users seen yet.|r" end
-    opt.vers:SetText(table.concat(lines, "\n"))
+    if #list == 0 then lines[#lines + 1] = "|cff" .. Hex(SOFT) .. "No other Guild Hall users seen yet.|r" end
+    -- as many rows as fit the box (its height is only known once the window is laid out)
+    local vb = opt.versBox
+    local fit = math.max(1, math.floor(((vb:GetHeight() or 0) - 6) / VERS_ROW))
+    for i = #opt.versRows + 1, fit do
+        local t = S.Text(vb, 11, S.T().text)
+        t:SetPoint("TOPLEFT", 8, -4 - (i - 1) * VERS_ROW)
+        t:SetPoint("RIGHT", vb, "RIGHT", -16, 0)
+        t:SetWordWrap(false)
+        opt.versRows[i] = t
+    end
+    opt.versMax = math.max(0, #lines - fit)
+    opt.versOff = math.max(0, math.min(opt.versOff or 0, opt.versMax))
+    for i, t in ipairs(opt.versRows) do
+        t:SetText(i <= fit and lines[opt.versOff + i] or "")
+    end
+    opt.versSb:Update(opt.versOff, opt.versMax, fit, #lines)
 end
 
 function PaintOptions()
@@ -1520,12 +1553,32 @@ local function Build()
 
     local cLabel = Label(inner, "Can make it")
     cLabel:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -12)
+    -- the crafter rows sit in a box that scrolls with the mouse wheel
+    local crBox = CreateFrame("Frame", nil, inner)
+    crBox:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 0, -4)
+    crBox:SetPoint("RIGHT", inner, "RIGHT", -12, 0)
+    crBox:SetHeight(CRAFTER_ROWS * 18)
+    crBox:EnableMouseWheel(true)
+    crBox:SetScript("OnMouseWheel", function(_, delta)
+        if (d.crMax or 0) <= 0 then return end
+        d.crOff = math.max(0, math.min(d.crMax, (d.crOff or 0) - delta))
+        PaintDetail()
+    end)
+    d.crSb = S.ScrollBar(crBox, function(off)
+        d.crOff = off
+        PaintDetail()
+    end)
+    d.crSb:SetPoint("TOPRIGHT", crBox, "TOPRIGHT", 0, 0)
+    d.crSb:SetPoint("BOTTOMRIGHT", crBox, "BOTTOMRIGHT", 0, 0)
+    d.crSb:Hide()
     d.crafters = {}
     for i = 1, CRAFTER_ROWS do
-        local r = CreateFrame("Frame", nil, inner)
+        local r = CreateFrame("Frame", nil, crBox)
         r:SetHeight(18)
         r:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 0, -4 - (i - 1) * 18)
-        r:SetPoint("RIGHT", inner, "RIGHT", -12, 0)
+        r:SetPoint("RIGHT", inner, "RIGHT", -24, 0)
+        r:EnableMouseWheel(true)
+        r:SetScript("OnMouseWheel", function(_, delta) crBox:GetScript("OnMouseWheel")(crBox, delta) end)
         r.dot = r:CreateTexture(nil, "ARTWORK")
         r.dot:SetSize(7, 7)
         r.dot:SetPoint("LEFT", 2, 0)
@@ -1547,8 +1600,6 @@ local function Build()
     d.src:SetJustifyV("TOP")
     d.src:SetSpacing(2)
     d.src:Hide()
-    d.more = S.Text(inner, 10, T.dim)
-    d.more:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 17, -6 - CRAFTER_ROWS * 18)
 
     local rLabel = Label(inner, "Reagents")
     rLabel:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 0, -20 - CRAFTER_ROWS * 18)

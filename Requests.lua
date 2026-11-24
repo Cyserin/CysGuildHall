@@ -145,18 +145,39 @@ end
 local told = {}
 local dlWaiting = {}   -- [id] = delivery that arrived before its request
 
+-- Requests you can make arrive in bursts at login: gathered for a moment, then one note
+-- for a single request or one summary line + one pop-up for several
+local canMake, canMakeTimer = {}, nil
+local function FlushCanMake()
+    canMakeTimer = nil
+    local list = canMake
+    canMake = {}
+    if #list == 0 then return end
+    local set = GH.db.settings
+    if #list == 1 then
+        local r, name = list[1].r, list[1].name
+        local dl = R.DeliveryText(r)
+        if set.notify then
+            GH.Print(("%s asks for %dx %s%s - you can make it. |cffd9a421/guildhall|r, Requests tab."):format(GH.Short(r.by), r.n, name, dl and (" (" .. dl .. ")") or ""))
+        end
+        -- pop-up only for requests placed in the last 30 minutes (not old ones synced at login)
+        if GH.Toast and GH.Toast.Request and GetServerTime() - (r.at or 0) < 1800 then GH.Toast.Request(r, name) end
+        return
+    end
+    if set.notify then
+        GH.Print(("%d guild craft requests you can make - |cffd9a421/guildhall|r, Requests tab."):format(#list))
+    end
+    if GH.Toast and GH.Toast.Requests then GH.Toast.Requests(list) end
+end
+
 local function Notify(r)
     if told[r.id] then return end
     local me = GH.Me()
     local name = GH.Index and GH.Index.RecipeName(r.rc) or ("recipe " .. r.rc)
     if r.st == "open" and r.by ~= me and R.ICanMake(r.rc) then
         told[r.id] = true
-        local dl = R.DeliveryText(r)
-        if GH.db.settings.notify then
-            GH.Print(("%s asks for %dx %s%s - you can make it. |cffd9a421/guildhall|r, Requests tab."):format(GH.Short(r.by), r.n, name, dl and (" (" .. dl .. ")") or ""))
-        end
-        -- pop-up only for requests placed in the last 30 minutes (not old ones synced at login)
-        if GH.Toast and GH.Toast.Request and GetServerTime() - (r.at or 0) < 1800 then GH.Toast.Request(r, name) end
+        canMake[#canMake + 1] = { r = r, name = name }
+        if not canMakeTimer then canMakeTimer = C_Timer.NewTimer(1, FlushCanMake) end
     elseif not GH.db.settings.notify then
         return
     elseif r.by == me and r.st == "claimed" and r.cr then
@@ -224,7 +245,7 @@ GH.Listen("ROSTER", function()
     R.purged = true
     Purge()
     -- reminder at login: requests waiting on you
-    C_Timer.After(20, function()
+    C_Timer.After(12, function()
         local n = R.ForMe()
         if n > 0 and GH.db.settings.notify then
             GH.Print(("%d guild craft %s waiting on you - |cffd9a421/guildhall|r, Requests tab."):format(n, n == 1 and "request" or "requests"))

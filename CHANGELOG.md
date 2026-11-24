@@ -2,6 +2,13 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 1.0.2
+- **Requests at login**: craft requests placed while you were offline arrive a few seconds after login, together, instead of trickling in one by one. Several at once give one chat line and one pop-up. (New message B packs several requests in one; older versions still get them one by one.)
+- **Can make it** is a scroll list (mouse wheel or the thin bar) showing every crafter; the heading shows the count.
+- **Roster tab**: the seal legend counts how many members run Cys's Guild Hall.
+- Fixed: the Options versions list ran past the bottom border (it scrolls now).
+- Fixed: recipe loot pop-up text overflowed the box.
+
 ## 1.0.1
 - **Recipe loot pop-ups** say what was found: the recipe in its quality color, a second line with the profession and what it makes, and the full item tooltip on hover.
 

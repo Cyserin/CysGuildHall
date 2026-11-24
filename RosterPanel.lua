@@ -25,57 +25,7 @@ local state = { sel = nil, offset = 0, query = "", online = false, sort = "onlin
 
 local Paint, PaintList
 
--- Thin scroll bar: drag the thumb, or click the track to page. onScroll(offset).
-local function ScrollBar(parent, onScroll)
-    local T = S.T()
-    local sb = CreateFrame("Frame", nil, parent)
-    sb:SetWidth(8)
-    sb:EnableMouse(true)
-    local track = S.Tex(sb, "BACKGROUND", T.line)
-    track:SetAllPoints()
-    local thumb = CreateFrame("Frame", nil, sb)
-    thumb:SetWidth(8)
-    thumb:EnableMouse(true)
-    thumb.tex = S.Tex(thumb, "ARTWORK", { T.brand[1], T.brand[2], T.brand[3], 0.55 })
-    thumb.tex:SetAllPoints()
-    thumb:SetScript("OnEnter", function(t) t.tex:SetAlpha(1) end)
-    thumb:SetScript("OnLeave", function(t) if not t.drag then t.tex:SetAlpha(0.55) end end)
-    sb.off, sb.maxOff, sb.page = 0, 0, 1
-    local function CursorY() local _, y = GetCursorPosition(); return y / sb:GetEffectiveScale() end
-    function sb:Update(off, maxOff, visible, total)
-        self.off, self.maxOff, self.page = off, maxOff, visible
-        if maxOff <= 0 then self:Hide(); return end
-        self:Show()
-        local h = self:GetHeight()
-        local th = math.max(24, math.floor(h * visible / total))
-        self.th = th
-        thumb:SetHeight(th)
-        thumb:ClearAllPoints()
-        thumb:SetPoint("TOP", self, "TOP", 0, -math.floor((h - th) * off / maxOff + 0.5))
-    end
-    thumb:SetScript("OnMouseDown", function(t)
-        t.drag, t.y0, t.off0 = true, CursorY(), sb.off
-        t:SetScript("OnUpdate", function()
-            local room = sb:GetHeight() - (sb.th or 24)
-            if room <= 0 then return end
-            local off = math.floor(t.off0 + (t.y0 - CursorY()) / room * sb.maxOff + 0.5)
-            off = math.max(0, math.min(sb.maxOff, off))
-            if off ~= sb.off then onScroll(off) end
-        end)
-    end)
-    thumb:SetScript("OnMouseUp", function(t)
-        t.drag = nil
-        t:SetScript("OnUpdate", nil)
-        t.tex:SetAlpha(t:IsMouseOver() and 1 or 0.55)
-    end)
-    sb:SetScript("OnMouseDown", function()
-        -- page toward where the track was clicked
-        local top = thumb:GetTop() or 0
-        local dir = CursorY() > top and -1 or 1
-        onScroll(math.max(0, math.min(sb.maxOff, sb.off + dir * sb.page)))
-    end)
-    return sb
-end
+local ScrollBar = function(parent, onScroll) return S.ScrollBar(parent, onScroll) end
 
 local function Hex(r, g, b) return ("%02x%02x%02x"):format(math.floor(r * 255), math.floor(g * 255), math.floor(b * 255)) end
 
@@ -205,15 +155,16 @@ local SORTS = {
 }
 
 local function List()
-    local out, total, on = {}, 0, 0
+    local out, total, on, users = {}, 0, 0, 0
     local q = state.query:lower()
     for _, p in ipairs(Build()) do
         total = total + 1
         if p.online then on = on + 1 end
+        if p.ver then users = users + 1 end
         if (not state.online or p.online) and Matches(p, q) then out[#out + 1] = p end
     end
     table.sort(out, SORTS[state.sort] or SORTS.online)
-    return out, total, on
+    return out, total, on, users
 end
 
 --------------------------------------------------------------------------------
@@ -319,12 +270,14 @@ end
 
 function Paint()
     if not panel or not panel:IsShown() then return end
-    local list, total, on = List()
+    local list, total, on, users = List()
     state.list = list
     local sel
     for _, p in ipairs(list) do if p.full == state.sel then sel = p end end
     if not sel and list[1] then sel = list[1]; state.sel = sel.full end
     panel.count:SetText(("%d members  -  |cff4fd66b%d online|r"):format(total, on))
+    -- players (main + alts as one) who run the addon on any of their characters
+    panel.key:SetText(("|T%s:14:14|t %d %s Cys's Guild Hall"):format(LOGO, users, users == 1 and "runs" or "run"))
     panel.empty:SetText(#list == 0 and (GH.rosterCount == 0 and "Reading the guild roster..." or "Nobody matches.") or "")
     PaintList(list)
     PaintDetail(sel)
@@ -466,6 +419,7 @@ function UI.Build(frame)
     local key = S.Text(panel, 10, T.dim, "RIGHT")
     key:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", -2, -7)
     key:SetText("|T" .. LOGO .. ":14:14|t runs Cys's Guild Hall")
+    panel.key = key
 
     -- detail
     local d = S.Panel(panel, T.field)

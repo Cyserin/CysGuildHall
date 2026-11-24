@@ -319,3 +319,56 @@ function S.Dropdown(parent, w, h, items, get, set)
     b:Refresh()
     return b
 end
+
+-- Thin scroll bar: drag the thumb, or click the track to page. onScroll(offset).
+-- sb:Update(offset, maxOffset, visibleRows, totalRows); hides itself when nothing scrolls.
+function S.ScrollBar(parent, onScroll)
+    local T = S.T()
+    local sb = CreateFrame("Frame", nil, parent)
+    sb:SetWidth(8)
+    sb:EnableMouse(true)
+    local track = S.Tex(sb, "BACKGROUND", T.line)
+    track:SetAllPoints()
+    local thumb = CreateFrame("Frame", nil, sb)
+    thumb:SetWidth(8)
+    thumb:EnableMouse(true)
+    thumb.tex = S.Tex(thumb, "ARTWORK", { T.brand[1], T.brand[2], T.brand[3], 0.55 })
+    thumb.tex:SetAllPoints()
+    thumb:SetScript("OnEnter", function(t) t.tex:SetAlpha(1) end)
+    thumb:SetScript("OnLeave", function(t) if not t.drag then t.tex:SetAlpha(0.55) end end)
+    sb.off, sb.maxOff, sb.page = 0, 0, 1
+    local function CursorY() local _, y = GetCursorPosition(); return y / sb:GetEffectiveScale() end
+    function sb:Update(off, maxOff, visible, total)
+        self.off, self.maxOff, self.page = off, maxOff, visible
+        if maxOff <= 0 then self:Hide(); return end
+        self:Show()
+        local h = self:GetHeight()
+        local th = math.max(24, math.floor(h * visible / total))
+        self.th = th
+        thumb:SetHeight(th)
+        thumb:ClearAllPoints()
+        thumb:SetPoint("TOP", self, "TOP", 0, -math.floor((h - th) * off / maxOff + 0.5))
+    end
+    thumb:SetScript("OnMouseDown", function(t)
+        t.drag, t.y0, t.off0 = true, CursorY(), sb.off
+        t:SetScript("OnUpdate", function()
+            local room = sb:GetHeight() - (sb.th or 24)
+            if room <= 0 then return end
+            local off = math.floor(t.off0 + (t.y0 - CursorY()) / room * sb.maxOff + 0.5)
+            off = math.max(0, math.min(sb.maxOff, off))
+            if off ~= sb.off then onScroll(off) end
+        end)
+    end)
+    thumb:SetScript("OnMouseUp", function(t)
+        t.drag = nil
+        t:SetScript("OnUpdate", nil)
+        t.tex:SetAlpha(t:IsMouseOver() and 1 or 0.55)
+    end)
+    sb:SetScript("OnMouseDown", function()
+        -- page toward where the track was clicked
+        local top = thumb:GetTop() or 0
+        local dir = CursorY() > top and -1 or 1
+        onScroll(math.max(0, math.min(sb.maxOff, sb.off + dir * sb.page)))
+    end)
+    return sb
+end

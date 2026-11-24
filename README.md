@@ -2,6 +2,8 @@
 
 A guild crafting directory for World of Warcraft Forever, by **Cyserin (Cys)**.
 
+> Not the same addon as **Guildhall** by Ryggsekken (YippYapp, `/gh`, ships LibForever-1.0). Cys's Guild Hall installs as the `CysGuildHall` folder, opens with `/guildhall`, and needs no libraries.
+
 Works for any guild. Every member who runs it shares the recipes they know, so anyone can search an item and see who in the guild can make it.
 
 ## Features

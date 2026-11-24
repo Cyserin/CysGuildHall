@@ -11,6 +11,17 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "1.0.2",
+        improved = {
+            "Craft requests placed while you were offline show up a few seconds after you log in, all together, instead of trickling in one by one. Several at once give one chat line and one pop-up instead of one each.",
+            "Can make it is a scroll list: every crafter, not just the first five. Scroll with the mouse wheel or the thin bar on the right; the heading shows how many there are.",
+            "Roster tab: the seal legend counts how many members run Cys's Guild Hall.",
+        },
+        fixed = {
+            "Options: the Guild Hall versions list stays inside the window (it scrolls now).",
+            "Recipe loot pop-ups no longer spill text past the bottom of the box.",
+        },
+    },
     { version = "1.0.1",
         improved = {
             "Recipe loot pop-ups now say what was found: the recipe in its quality color, plus a line with the profession and what it makes (for example Tailoring - makes Red Linen Robe). Hover the pop-up to see the full item tooltip.",

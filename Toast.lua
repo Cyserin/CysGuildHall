@@ -44,10 +44,12 @@ local function Build()
     frame.title:SetText("Guild Hall")
     frame.text = S.Text(frame, 11, T.text)
     frame.text:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -3)
-    frame.text:SetPoint("RIGHT", -10, 0)
+    -- fixed width so the wrapped height can be measured before the toast is placed
+    frame.text:SetWidth(360 - 46 - 12)
     frame.text:SetJustifyH("LEFT")
+    frame.text:SetJustifyV("TOP")
     frame.text:SetWordWrap(true)
-    if frame.text.SetMaxLines then frame.text:SetMaxLines(3) end
+    if frame.text.SetMaxLines then frame.text:SetMaxLines(5) end
 
     frame:SetScript("OnDragStart", function(f) f.dragging = true; f:StartMoving() end)
     frame:SetScript("OnDragStop", function(f)
@@ -121,11 +123,13 @@ function Toast.Next()
     local e = table.remove(queue, 1)
     playing = true
     Place()
+    frame:ClearAllPoints()
+    frame:SetPoint(frame.point, UIParent, frame.point, frame.x, frame.baseY - RISE)
     frame.icon:SetTexture(e.icon or "Interface\\Icons\\Trade_BlackSmithing")
     frame.text:SetText(e.text)
-    -- grow to fit a second line so the whole note shows
+    -- grow to fit every wrapped line so the whole note stays inside the box
     local h = frame.text:GetStringHeight() or 0
-    frame:SetHeight(math.max(46, math.floor(h + 0.5) + 33))
+    frame:SetHeight(math.max(46, math.floor(h + 0.5) + 36))
     frame.pid = e.pid
     frame.onClick = e.onClick
     frame.item = e.item
@@ -187,6 +191,21 @@ function Toast.Request(r, name)
     local c = GH.db.recipes[r.rc]
     Toast.Add(("|cffffd100%s|r placed a request for %dx %s - you can make it."):format(GH.Short(r.by), r.n or 1, name),
         ItemIcon(c and c.o), nil, OpenTab("requests"))
+end
+
+-- Several at once (login sync): one pop-up naming the first two
+function Toast.Requests(list)
+    local fresh = {}
+    for _, e in ipairs(list) do
+        if GetServerTime() - (e.r.at or 0) < 1800 then fresh[#fresh + 1] = e end
+    end
+    if #fresh == 0 then return end   -- old ones synced at login: the chat line is enough
+    if #fresh == 1 then return Toast.Request(fresh[1].r, fresh[1].name) end
+    local a, b = fresh[1], fresh[2]
+    local text = ("|cffffd100%d new craft requests|r you can make: %dx %s, %dx %s"):format(#fresh, a.r.n or 1, a.name, b.r.n or 1, b.name)
+    if #fresh > 2 then text = text .. (" and %d more."):format(#fresh - 2) else text = text .. "." end
+    local c = GH.db.recipes[a.r.rc]
+    Toast.Add(text, ItemIcon(c and c.o), nil, OpenTab("requests"))
 end
 
 --------------------------------------------------------------------------------
