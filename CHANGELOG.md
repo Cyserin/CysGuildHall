@@ -12,6 +12,8 @@ All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 - Checkboxes show a gold check mark with a gold edge on hover; scroll bars are slimmer.
 - Empty detail panels show a faint Guild Hall seal.
 - Pop-ups (guild news toasts with a gold edge stripe, materials, shopping list, welcome, What's new) share the new look.
+- **Bigger window**: wider (800 px) and shown at 110% by default. Drag the grip in the bottom-right corner to size it (80-150%), or pick Options > Window size. The top-left corner stays put while resizing.
+- Roster: wider member list, so long names fit.
 - Fixed: the hint on the right of Crafting, Requests and Gaps was drawn behind the detail panel and never showed.
 
 ## 1.1.1

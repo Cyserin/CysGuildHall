@@ -538,7 +538,7 @@ function UI.Build(frame)
     -- members list
     local box = S.Panel(panel, T.field)
     box:SetPoint("TOPLEFT", 10, -40)
-    box:SetSize(420, ROWS * ROW_H + 4)
+    box:SetSize(480, ROWS * ROW_H + 4)
     box:EnableMouseWheel(true)
     box:SetScript("OnMouseWheel", function(_, delta)
         state.offset = math.max(0, state.offset - delta * 3)
@@ -572,20 +572,20 @@ function UI.Build(frame)
         r.logo:SetTexture(LOGO)
         r.name = S.Text(r, 12, T.text)
         r.name:SetPoint("LEFT", 40, 0)
-        r.name:SetWidth(132)
+        r.name:SetWidth(180)
         r.name:SetWordWrap(false)
         r.lvl = S.Text(r, 11, T.text, "RIGHT")
-        r.lvl:SetPoint("LEFT", 172, 0)
+        r.lvl:SetPoint("LEFT", 220, 0)
         r.lvl:SetWidth(22)
         r.rank = S.Text(r, 11, SOFT)
-        r.rank:SetPoint("LEFT", 202, 0)
+        r.rank:SetPoint("LEFT", 250, 0)
         r.rank:SetWidth(86)
         r.rank:SetWordWrap(false)
         r.prof = {}
         for k = 1, 4 do
             local t = r:CreateTexture(nil, "ARTWORK")
             t:SetSize(15, 15)
-            t:SetPoint("LEFT", 292 + (k - 1) * 17, 0)
+            t:SetPoint("LEFT", 340 + (k - 1) * 17, 0)
             t:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             r.prof[k] = t
         end
@@ -617,7 +617,7 @@ function UI.Build(frame)
 
     -- detail
     local d = S.Panel(panel, T.field)
-    d:SetPoint("TOPLEFT", 440, -10)
+    d:SetPoint("TOPLEFT", 500, -10)
     d:SetPoint("BOTTOMRIGHT", -10, 10)
     panel.detail = d
     d.none = S.Text(d, 11, SOFT, "CENTER")

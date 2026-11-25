@@ -19,6 +19,8 @@ WN.ENTRIES = {
             "Picked rows get a gold marker on the left, lists have faint stripes, and search boxes have a magnifier.",
             "Dropdown arrows point down, checkboxes show a real check mark, and scroll bars are slimmer.",
             "Pop-ups (guild news, materials, shopping list, welcome, What's new) share the same look.",
+            "A bigger window: wider, and a little larger by default. Drag the grip in the bottom-right corner to size it, or pick Options > Window size (80% to 150%).",
+            "The Roster has room for longer names.",
         },
         fixed = {
             "The hint on the right side of Crafting, Requests and Gaps (what to pick) was hidden behind the panel. It shows now, under the seal.",

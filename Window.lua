@@ -527,7 +527,7 @@ end
 local W = {}
 GH.Window = W
 
-local WIDTH, HEIGHT = 700, 470
+local WIDTH, HEIGHT = 800, 470
 local LIST_W = 300
 local ROW_H = 22
 local ROWS = 16
@@ -1428,6 +1428,22 @@ function BuildOptions()
         GH.Print("text font changed: type /reload to apply it everywhere.")
     end)
     opt.font:SetPoint("LEFT", fl, "LEFT", 70, 0)
+
+    -- Window size (also the grip in the bottom-right corner)
+    local sl = S.Text(opt, 11, T.text)
+    sl:SetPoint("LEFT", opt.font, "RIGHT", 14, 0)
+    sl:SetText("Window size")
+    opt.size = S.Dropdown(opt, 70, 18, function()
+        local t = {}
+        for pct = 80, 150, 10 do t[#t + 1] = { pct / 100, pct .. "%" } end
+        local cur = set.scale or 1.1
+        local listed = false
+        for _, it in ipairs(t) do if math.abs(it[1] - cur) < 0.001 then listed = true end end
+        if not listed then t[#t + 1] = { cur, math.floor(cur * 100 + 0.5) .. "%" } end
+        table.sort(t, function(a, b) return a[1] < b[1] end)
+        return t
+    end, function() return set.scale or 1.1 end, function(v) W.SetScale(v) end)
+    opt.size:SetPoint("LEFT", sl, "RIGHT", 6, 0)
 end
 
 -- Who runs which version: newer than yours green, older soft red, same parchment
@@ -1716,6 +1732,36 @@ function W.OpenAlts()
     PaintAlts()
 end
 
+-- Keep the window's top-left corner where it is while the scale changes
+function W.PinTopLeft()
+    if not frame or not frame:GetLeft() then return end
+    local sc = frame:GetScale()
+    local x, y = frame:GetLeft() * sc, frame:GetTop() * sc
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / sc, y / sc)
+end
+
+-- Window size: 80% to 150% in 5% steps; live = true while dragging the grip (not saved yet)
+function W.SetScale(v, live)
+    v = math.floor(math.max(0.8, math.min(1.5, v or 1.1)) * 20 + 0.5) / 20
+    if not live then GH.db.settings.scale = v end
+    if not frame then return end
+    if math.abs(frame:GetScale() - v) > 0.001 then
+        local old = frame:GetScale()
+        local x, y = frame:GetLeft(), frame:GetTop()
+        frame:SetScale(v)
+        if x then
+            frame:ClearAllPoints()
+            frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x * old / v, y * old / v)
+        end
+    end
+    if not live then
+        local p, _, rel, px, py = frame:GetPoint()
+        GH.db.settings.pos = { p, px, py, rel }
+        if frame.options and frame.options.size then frame.options.size:Refresh() end
+    end
+end
+
 local function Build()
     local T = S.T()
     frame = CreateFrame("Frame", "CysGuildHallFrame", UIParent)
@@ -1728,13 +1774,43 @@ local function Build()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", function(f)
         f:StopMovingOrSizing()
-        local p, _, _, x, y = f:GetPoint()
-        GH.db.settings.pos = { p, x, y }
+        local p, _, rel, x, y = f:GetPoint()
+        GH.db.settings.pos = { p, x, y, rel }
     end)
+    frame:SetScale(GH.db.settings.scale or 1.1)
     local pos = GH.db.settings.pos
-    if pos then frame:SetPoint(pos[1], UIParent, pos[1], pos[2], pos[3]) else frame:SetPoint("CENTER", 0, 40) end
+    if pos then frame:SetPoint(pos[1], UIParent, pos[4] or pos[1], pos[2], pos[3]) else frame:SetPoint("CENTER", 0, 40) end
 
     S.Chrome(frame)
+
+    -- resize grip (bottom-right): drag to make the whole window bigger or smaller
+    local grip = CreateFrame("Button", nil, frame)
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", -3, 3)
+    grip:SetFrameLevel(frame:GetFrameLevel() + 60)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    grip:SetScript("OnMouseDown", function()
+        frame:StopMovingOrSizing()
+        W.PinTopLeft()
+        grip:SetScript("OnUpdate", function()
+            local cx = GetCursorPosition() / UIParent:GetEffectiveScale()
+            local left = frame:GetLeft() * frame:GetScale()
+            W.SetScale((cx - left) / WIDTH, true)
+        end)
+    end)
+    grip:SetScript("OnMouseUp", function()
+        grip:SetScript("OnUpdate", nil)
+        W.SetScale(frame:GetScale())
+    end)
+    grip:SetScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Window size", 1, 1, 1)
+        GameTooltip:AddLine("Drag to make Guild Hall bigger or smaller. Also in Options.", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:Show()
+    end)
+    grip:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- header
     local header = CreateFrame("Frame", nil, frame)

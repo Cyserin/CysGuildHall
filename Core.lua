@@ -554,7 +554,7 @@ end)
 -- Saved data
 --------------------------------------------------------------------------------
 local DEFAULTS = { font = "clean", tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true, altGroup = true, altRank = "", calRemind = true,
-    craftSort = "name", shopAuto = true, bankShare = false }
+    craftSort = "name", shopAuto = true, bankShare = false, scale = 1.1 }
 
 GH.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end
