@@ -160,7 +160,7 @@ function S.Watermark(panel, size)
     t:SetTexture(LOGO)
     t:SetSize(size or 150, size or 150)
     t:SetPoint("CENTER")
-    t:SetAlpha(0.05)
+    t:SetAlpha(0.035)
     t:SetDesaturated(true)
     return t
 end

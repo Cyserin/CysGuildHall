@@ -545,9 +545,34 @@ local function AltSuffix(c)
     end
     return ""
 end
+-- the character of this line to whisper: an online one (main first), nil when all are offline
+local function WhisperTarget(c)
+    for _, o in ipairs(c.chars or { c }) do
+        if o.online then return o.name end
+    end
+end
+local function Whisper(full)
+    local name = GH.RosterName(full)
+    if ChatFrame_SendTell then ChatFrame_SendTell(name)
+    elseif ChatFrame_OpenChat then ChatFrame_OpenChat("/w " .. name .. " ") end
+end
+-- "online in Zone" / "last on 3 d ago" for one character
+local function SeenText(full)
+    local e = GH.RosterEntry and GH.RosterEntry(full)
+    if GH.IsOnline(full) then
+        return "|cff4fd66bOnline|r" .. (e and e.zone and e.zone ~= "" and ("  |cffd6c49e" .. e.zone .. "|r") or "")
+    end
+    local h = e and e.lastH
+    if not h then return "|cff8a8a8aOffline|r" end
+    local t = h < 1 and "<1 h" or h < 24 and (h .. " h") or (math.floor(h / 24) .. " d")
+    return "|cff8a8a8aOffline, last on " .. t .. " ago|r"
+end
 local function CrafterTip(row)
     local c = row.data
     if not c then return end
+    if row.hl then row.hl:Show() end
+    local wt = WhisperTarget(c)
+    if row.wh then row.wh:SetShown(wt and true or false) end
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     local main = c.altOf or (c.chars and GH.RosterName(c.chars[1].name)) or c.name
     GameTooltip:SetText(GH.Short(main) .. (c.altOf and " (alt can make it)" or ""), 0.85, 0.64, 0.13)
@@ -557,7 +582,31 @@ local function CrafterTip(row)
         GameTooltip:AddDoubleLine(ColorName(o.name) .. "  |cffd6c49e" .. tag .. "|r",
             skill .. (o.online and "  |cff4fd66bonline|r" or "  |cff8a8a8aoffline|r"), 1, 1, 1, 0.84, 0.77, 0.62)
     end
-    GameTooltip:AddLine("Alts come from each player's own main + alts pick (Options tab), else a note naming the main.", 0.84, 0.77, 0.62, true)
+    if c.chars or c.altOf then
+        GameTooltip:AddLine("Alts come from each player's own main + alts pick (Options tab), else a note naming the main.", 0.84, 0.77, 0.62, true)
+    end
+    if wt then
+        GameTooltip:AddLine((#(c.chars or {}) > 1 and "Click to whisper " .. GH.Short(wt) or "Click to whisper") .. ".", 0.94, 0.76, 0.29)
+    end
+    GameTooltip:Show()
+end
+local function CrafterLeave(row)
+    if row.hl then row.hl:Hide() end
+    if row.wh then row.wh:Hide() end
+    GameTooltip:Hide()
+end
+local function DotTip(hit)
+    local c = hit:GetParent().data
+    if not c then return end
+    GameTooltip:SetOwner(hit, "ANCHOR_RIGHT")
+    local any = false
+    for _, o in ipairs(c.chars or { c }) do
+        if o.online then any = true end
+    end
+    GameTooltip:SetText(any and "Online now" or "Offline", 1, 1, 1)
+    for _, o in ipairs(c.chars or { c }) do
+        GameTooltip:AddDoubleLine(GH.Short(o.name), SeenText(o.name), 0.84, 0.77, 0.62, 1, 1, 1)
+    end
     GameTooltip:Show()
 end
 local REAGENT_ROWS = 7
@@ -720,9 +769,16 @@ local function Rebuild()
     elseif state.tab == "requests" then
         local q = state.query:lower()
         local now = GetServerTime()
+        local f = GH.db.settings.reqFilter or "all"
+        local me, mine = GH.Me(), GH.db.mine or {}
         for _, r in ipairs(GH.Requests.All()) do
             local name = I.RecipeName(r.rc)
             local visible = r.st ~= "cancelled" and not (r.st == "done" and now - (r.rev or 0) > (GH.db.settings.doneHours or 24) * 3600)
+            if f == "open" then visible = visible and r.st == "open"
+            elseif f == "claimed" then visible = visible and (r.st == "claimed" or r.st == "ready")
+            elseif f == "mine" then
+                visible = visible and (r.by == me or r.cr == me or mine[r.by] or (r.cr and mine[r.cr])) and true or false
+            end
             if visible and (q == "" or name:lower():find(q, 1, true) or GH.Short(r.by):lower():find(q, 1, true)) then
                 list[#list + 1] = { kind = "req", id = r.id, rc = r.rc, name = name, r = r }
             end
@@ -885,9 +941,9 @@ function Paint()
                     row.text:SetText(d.name)
                     local lv = (d.lvl and d.lvl > 1) and ("|cffd6c49e" .. d.lvl .. "|r  ") or ""
                     if d.online > 0 then
-                        row.right:SetText(("%s|cff4fd66b%d on|r / %d"):format(lv, d.online, d.crafters))
+                        row.right:SetText(("%s|cff4fd66b%d|r/%d online"):format(lv, d.online, d.crafters))
                     else
-                        row.right:SetText(("%s|cff8a8a8a%d|r"):format(lv, d.crafters))
+                        row.right:SetText(("%s|cff8a8a8a0/%d online|r"):format(lv, d.crafters))
                     end
                 end
             end
@@ -923,7 +979,7 @@ function Paint()
     elseif state.tab == "gaps" then
         frame.empty:SetText("")
     elseif n == 0 and state.tab == "requests" then
-        frame.empty:SetText(state.query == "" and "No craft requests yet.\n\nPick an item on the Crafting tab and press Request." or "No requests match.")
+        frame.empty:SetText((state.query ~= "" and "No requests match.") or ((GH.db.settings.reqFilter or "all") ~= "all" and "No requests here.\n\nThe dropdown next to the search box shows the rest.") or "No craft requests yet.\n\nPick an item on the Crafting tab and press Request." or "No requests match.")
     elseif n == 0 and state.query == "" then
         frame.empty:SetText("No crafters yet.\n\nOpen each of your profession windows once so the addon can read your recipes. Guildmates who run Cys's Guild Hall show up here as they log in.")
     elseif state.tab == "craft" and GH.db.settings.craftSort == "mine" and (state.query ~= "" or state.cat)
@@ -987,11 +1043,11 @@ function PaintDetail()
         end
         d.hint:SetText(hint)
         d.hint:Show()
-        d.watermark:SetAlpha(0.09)
+        d.watermark:SetAlpha(0.065)
         return
     end
     d.hint:Hide()
-    d.watermark:SetAlpha(0.03)
+    d.watermark:SetAlpha(0.02)
     d.box:Show()
     local c = GH.Prof.Resolve(id) or {}
     d.icon:SetTexture(Icon(c.o, id))
@@ -1041,8 +1097,7 @@ function PaintDetail()
             r.text:SetText(GH.Short(cr.name) .. AltSuffix(cr))
             r.text:SetTextColor(cr_r, cr_g, cr_b)
             r.right:SetText(cr.m > 0 and ("%d / %d"):format(cr.s, cr.m) or tostring(cr.s))
-            r.data = (cr.chars or cr.altOf) and cr or nil
-            r:EnableMouse(r.data and true or false)
+            r.data = cr
         else
             r.data = nil
             r:Hide()
@@ -1085,6 +1140,19 @@ function PaintDetail()
     else
         d.cLabel:SetText(#crafters > CRAFTER_ROWS and ("Can make it (%d)"):format(#crafters) or "Can make it")
     end
+    -- Reagents sit right under the last crafter line (or the source text): no empty gap
+    local used
+    if #crafters == 0 then
+        used = math.max(18, math.min(CRAFTER_ROWS * 18, math.ceil(d.src:GetStringHeight() or 0)))
+    else
+        used = math.min(#crafters, CRAFTER_ROWS) * 18
+    end
+    d.crBox:SetHeight(used)
+    d.rLabel:ClearAllPoints()
+    d.rLabel:SetPoint("TOPLEFT", d.cLabel, "BOTTOMLEFT", 0, -20 - used)
+    -- requests: who brings the reagents
+    local mFrom = req and GH.Requests.MatsFrom and select(2, GH.Requests.MatsFrom(req))
+    d.rLabel:SetText(mFrom and ("Reagents  |cffd6c49efrom " .. mFrom .. "|r") or "Reagents")
 
     -- reagents: have (bags + bank) / need
     local make = state.make
@@ -1219,8 +1287,10 @@ function SetTab(tab)
     if frame.roster then frame.roster:SetShown(tab == "roster") end
     frame.srcBtn:SetShown(tab == "gaps")
     frame.lvlBtn:SetShown(tab == "craft")
+    frame.reqBtn:SetShown(tab == "requests")
     local inset = 6
-    if tab == "gaps" then inset = frame.srcBtn:GetWidth() + 10 elseif tab == "craft" then inset = frame.lvlBtn:GetWidth() + 10 end
+    if tab == "gaps" then inset = frame.srcBtn:GetWidth() + 10 elseif tab == "craft" then inset = frame.lvlBtn:GetWidth() + 10
+    elseif tab == "requests" then inset = frame.reqBtn:GetWidth() + 10 end
     frame.search:SetTextInsets(6, inset, 0, 0)
     if tab == "options" or tab == "prep" or tab == "cal" or tab == "roster" then frame.search:ClearFocus() end
     if frame.search:GetText() ~= "" then
@@ -1925,6 +1995,27 @@ local function Build()
     lvlBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
     frame.lvlBtn = lvlBtn
 
+    -- Requests: which ones to list
+    local REQ_FILTERS = { { "all", "All" }, { "open", "Open" }, { "claimed", "Claimed" }, { "mine", "Mine" } }
+    local reqBtn = S.Dropdown(search, 84, 18, function() return REQ_FILTERS end,
+        function() return GH.db.settings.reqFilter or "all" end, function(v)
+        GH.db.settings.reqFilter = v
+        state.offset = 0
+        Rebuild()
+    end)
+    reqBtn:SetPoint("RIGHT", search, "RIGHT", -3, 0)
+    reqBtn:HookScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("Show", 1, 1, 1)
+        GameTooltip:AddLine("Open: waiting for a crafter.", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:AddLine("Claimed: a crafter took it (mats ready too).", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:AddLine("Mine: asked for or claimed by your characters.", SOFT[1], SOFT[2], SOFT[3], true)
+        GameTooltip:Show()
+    end)
+    reqBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    reqBtn:Hide()
+    frame.reqBtn = reqBtn
+
     -- list
     local listBox = S.Panel(frame, T.field)
     listBox:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -6)
@@ -1963,6 +2054,26 @@ local function Build()
             local rid = dd and (dd.kind == "recipe" and dd.id or dd.kind == "req" and dd.rc)
             local c = rid and GH.db.recipes[rid]
             if c and c.o then ItemTip(r, c.o) end
+            if not dd then return end
+            local extra
+            if dd.kind == "recipe" and not dd.gap and dd.crafters then
+                extra = function()
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine(("%d %s in the guild, %d online now"):format(dd.crafters, dd.crafters == 1 and "crafter" or "crafters", dd.online or 0), 0.31, 0.84, 0.42)
+                end
+            elseif dd.kind == "req" and dd.r then
+                extra = function()
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine(GH.Requests.MatsText(dd.r), SOFT[1], SOFT[2], SOFT[3], true)
+                end
+            end
+            if not extra then return end
+            if not GameTooltip:IsOwned(r) then
+                GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
+                GameTooltip:SetText(dd.name or "", 1, 1, 1)
+            end
+            extra()
+            GameTooltip:Show()
         end)
         row:SetScript("OnLeave", function(r) r.hl:Hide(); GameTooltip:Hide() end)
         frame.rows[i] = row
@@ -2065,8 +2176,11 @@ local function Build()
     d.crSb:Hide()
     d.crafters = {}
     for i = 1, CRAFTER_ROWS do
-        local r = CreateFrame("Frame", nil, crBox)
+        local r = CreateFrame("Button", nil, crBox)
         r:SetHeight(18)
+        r.hl = S.Tex(r, "BACKGROUND", T.cardHover)
+        r.hl:SetAllPoints()
+        r.hl:Hide()
         r:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 0, -4 - (i - 1) * 18)
         r:SetPoint("RIGHT", inner, "RIGHT", -24, 0)
         r:EnableMouseWheel(true)
@@ -2078,13 +2192,30 @@ local function Build()
         r.text:SetPoint("LEFT", r.dot, "RIGHT", 8, 0)
         r.right = S.Text(r, 11, SOFT, "RIGHT")
         r.right:SetPoint("RIGHT")
-        r.text:SetPoint("RIGHT", r.right, "LEFT", -8, 0)
+        r.wh = S.Text(r, 10, T.accent, "RIGHT")
+        r.wh:SetPoint("RIGHT", r.right, "LEFT", -10, 0)
+        r.wh:SetText("Whisper")
+        r.wh:Hide()
+        r.text:SetPoint("RIGHT", r.wh, "LEFT", -6, 0)
         r.text:SetWordWrap(false)
         r:SetScript("OnEnter", CrafterTip)
-        r:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        r:SetScript("OnLeave", CrafterLeave)
+        r:SetScript("OnClick", function(s)
+            local wt = s.data and WhisperTarget(s.data)
+            if wt then Whisper(wt) end
+        end)
+        local hit = CreateFrame("Frame", nil, r)
+        hit:SetSize(14, 18)
+        hit:SetPoint("LEFT", -2, 0)
+        hit:EnableMouse(true)
+        hit:SetScript("OnEnter", DotTip)
+        hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        hit:EnableMouseWheel(true)
+        hit:SetScript("OnMouseWheel", function(_, delta) crBox:GetScript("OnMouseWheel")(crBox, delta) end)
         d.crafters[i] = r
     end
     d.cLabel = cLabel
+    d.crBox = crBox
     d.src = S.Text(inner, 12, T.text)
     d.src:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 0, -6)
     d.src:SetPoint("RIGHT", inner, "RIGHT", -12, 0)
@@ -2094,6 +2225,7 @@ local function Build()
     d.src:Hide()
 
     local rLabel = Label(inner, "Reagents")
+    d.rLabel = rLabel
     rLabel:SetPoint("TOPLEFT", cLabel, "BOTTOMLEFT", 0, -20 - CRAFTER_ROWS * 18)
     -- your claimed request: reopen the materials pop-up (crafter's counts)
     d.mats = S.Button(inner, 104, 18, "Crafter's counts")

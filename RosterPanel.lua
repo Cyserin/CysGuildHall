@@ -15,7 +15,7 @@ local UI = {}
 GH.RosterPanel = UI
 
 local SOFT = { 0.84, 0.77, 0.62, 1 }
-local ROWS, ROW_H = 16, 22
+local ROWS, ROW_H, HEAD_H = 15, 22, 18
 -- small gold "GH" coin: the full seal is too detailed to read at row size
 local LOGO = "Interface\\AddOns\\CysGuildHall\\Media\\Mark"
 local CLASS_TEX = "Interface\\TargetingFrame\\UI-Classes-Circles"
@@ -47,6 +47,17 @@ local function SetClassIcon(tex, class)
     else
         tex:Hide()
     end
+end
+
+-- gold-tick section heading inside a text block (same look as S.Heading)
+local function Head(text)
+    return "|TInterface\\Buttons\\WHITE8x8:11:2:0:0:8:8:0:8:0:8:224:174:44|t  |cfff0c24a" .. text .. "|r"
+end
+
+-- zone of the character a player is on right now
+local function ZoneOf(p)
+    local e = p.onChar and GH.roster[p.onChar]
+    return e and e.zone ~= "" and e.zone or nil
 end
 
 local function ProfIcon(pid)
@@ -381,6 +392,7 @@ local function PaintDetail(p)
     if e.onote and e.onote ~= "" then Add("|cffd9a421Officer note:|r " .. e.onote) end
     Add(p.ver and ("|cffd9a421Cys's Guild Hall|r " .. (p.ver == "?" and "" or p.ver)) or "|cff8a8a8aDoesn't run Cys's Guild Hall|r")
     Add(" ")
+    Add(Head("Professions"))
     -- professions per character (main first, then alts)
     local any = false
     for _, c in ipairs({ p.full, unpack(p.alts) }) do
@@ -409,12 +421,13 @@ local function PaintDetail(p)
         local pr = Profs(a)
         if not pr or not next(pr) then
             local ae = GH.roster[a] or {}
-            bare[#bare + 1] = "|cff" .. ClassHex(ae.class) .. GH.Short(a) .. "|r" .. (ae.level and (" " .. ae.level) or "") .. (ae.online and " |cff4fd66b(on)|r" or "")
+            bare[#bare + 1] = "|cff" .. ClassHex(ae.class) .. GH.Short(a) .. "|r" .. (ae.level and ("  |cff8a8a8a" .. ae.level .. "|r") or "") .. (ae.online and "  |cff4fd66bonline|r" or "")
         end
     end
     if #bare > 0 then
         Add(" ")
-        Add("|cffd9a421Alts:|r " .. table.concat(bare, ", "))
+        Add(Head(#bare == #p.alts and "Alts" or "Other alts"))
+        for _, b in ipairs(bare) do Add("   " .. b) end
     end
     d.text:SetText(table.concat(lines, "\n"))
 end
@@ -440,13 +453,24 @@ function PaintList(list)
                 local pid = p.pids[k]
                 if pid then r.prof[k]:SetTexture(ProfIcon(pid)); r.prof[k]:Show() else r.prof[k]:Hide() end
             end
-            r.last:SetText(LastText({ online = p.online, lastH = p.lastH }))
+            if p.online then
+                r.last:SetText("|cff4fd66b" .. (ZoneOf(p) or "Online") .. "|r")
+            else
+                r.last:SetText(LastText({ lastH = p.lastH }))
+            end
             r.sel:SetShown(p.full == state.sel)
         else
             r:Hide()
         end
     end
     panel.sb:Update(state.offset, maxOff, ROWS, #list)
+    -- column headers: the active sort in gold with an underline
+    for key, h in pairs(panel.heads) do
+        local on = key == state.sort
+        local c = on and S.T().accent or SOFT
+        h.text:SetTextColor(c[1], c[2], c[3])
+        h.line:SetShown(on)
+    end
 end
 
 function Paint()
@@ -526,7 +550,8 @@ function UI.Build(frame)
     onl:SetPoint("LEFT", search, "RIGHT", 8, 0)
     local sort = S.Dropdown(panel, 96, 22, function()
         return { { "online", "Last online" }, { "name", "Name" }, { "level", "Level" }, { "rank", "Rank" } }
-    end, function() return state.sort end, function(v) state.sort = v; Paint() end)
+    end, function() return state.sort end, function(v) state.sort = v; state.offset = 0; Paint() end)
+    panel.sortDD = sort
     sort:SetPoint("TOPLEFT", panel, "TOPLEFT", 226, -10)
     sort:HookScript("OnEnter", function(s)
         GameTooltip:SetOwner(s, "ANCHOR_TOP")
@@ -538,7 +563,7 @@ function UI.Build(frame)
     -- members list
     local box = S.Panel(panel, T.field)
     box:SetPoint("TOPLEFT", 10, -40)
-    box:SetSize(480, ROWS * ROW_H + 4)
+    box:SetSize(480, HEAD_H + ROWS * ROW_H + 4)
     box:EnableMouseWheel(true)
     box:SetScript("OnMouseWheel", function(_, delta)
         state.offset = math.max(0, state.offset - delta * 3)
@@ -548,14 +573,59 @@ function UI.Build(frame)
         state.offset = off
         PaintList(state.list)
     end)
-    panel.sb:SetPoint("TOPRIGHT", -3, -3)
+    panel.sb:SetPoint("TOPRIGHT", -3, -3 - HEAD_H)
     panel.sb:SetPoint("BOTTOMRIGHT", -3, 3)
+    -- column headers (click to sort; Professions doesn't sort)
+    local sep = box:CreateTexture(nil, "ARTWORK")
+    sep:SetColorTexture(T.brand[1], T.brand[2], T.brand[3], 0.25)
+    sep:SetHeight(1)
+    sep:SetPoint("TOPLEFT", 2, -HEAD_H - 1)
+    sep:SetPoint("TOPRIGHT", -2, -HEAD_H - 1)
+    panel.heads = {}
+    local HEADS = {
+        { "name", "Name", 42, 150, "LEFT" }, { "level", "Lvl", 202, 22, "RIGHT" }, { "rank", "Rank", 230, 76, "LEFT" },
+        { nil, "Professions", 314, 66, "LEFT" }, { "online", "Status", 384, 76, "RIGHT" },
+    }
+    for _, hd in ipairs(HEADS) do
+        local key = hd[1]
+        local h = CreateFrame("Button", nil, box)
+        h:SetSize(hd[4], HEAD_H)
+        h:SetPoint("TOPLEFT", hd[3], -1)
+        h.text = S.Text(h, 10, SOFT, hd[5])
+        h.text:SetAllPoints()
+        h.text:SetText(hd[2]:upper())
+        if key then
+            h.line = h:CreateTexture(nil, "ARTWORK")
+            h.line:SetColorTexture(T.brand[1], T.brand[2], T.brand[3], 0.9)
+            h.line:SetHeight(1)
+            h.line:SetWidth(math.min(hd[4], h.text:GetStringWidth() + 2))
+            h.line:SetPoint(hd[5] == "RIGHT" and "BOTTOMRIGHT" or "BOTTOMLEFT", 0, 2)
+            h.line:Hide()
+            panel.heads[key] = h
+            h:SetScript("OnClick", function()
+                state.sort = key
+                state.offset = 0
+                if panel.sortDD and panel.sortDD.Refresh then panel.sortDD:Refresh() end
+                Paint()
+            end)
+            h:SetScript("OnEnter", function(s)
+                s.text:SetTextColor(1, 1, 1)
+                GameTooltip:SetOwner(s, "ANCHOR_TOP")
+                GameTooltip:SetText("Sort by " .. (key == "online" and "last online" or hd[2]:lower()), 1, 1, 1)
+                GameTooltip:Show()
+            end)
+            h:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+                PaintList(state.list)
+            end)
+        end
+    end
     panel.rows = {}
     for i = 1, ROWS do
         local r = CreateFrame("Button", nil, box)
         r:SetHeight(ROW_H)
-        r:SetPoint("TOPLEFT", 2, -2 - (i - 1) * ROW_H)
-        r:SetPoint("TOPRIGHT", -14, -2 - (i - 1) * ROW_H)
+        r:SetPoint("TOPLEFT", 2, -2 - HEAD_H - (i - 1) * ROW_H)
+        r:SetPoint("TOPRIGHT", -14, -2 - HEAD_H - (i - 1) * ROW_H)
         if i % 2 == 0 then S.Tex(r, "BACKGROUND", { 1, 1, 1, 0.022 }, -1):SetAllPoints() end
         r.hl = S.Tex(r, "BACKGROUND", T.cardHover)
         r.hl:SetAllPoints()
@@ -572,34 +642,43 @@ function UI.Build(frame)
         r.logo:SetTexture(LOGO)
         r.name = S.Text(r, 12, T.text)
         r.name:SetPoint("LEFT", 40, 0)
-        r.name:SetWidth(180)
+        r.name:SetWidth(158)
         r.name:SetWordWrap(false)
         r.lvl = S.Text(r, 11, T.text, "RIGHT")
-        r.lvl:SetPoint("LEFT", 220, 0)
+        r.lvl:SetPoint("LEFT", 200, 0)
         r.lvl:SetWidth(22)
         r.rank = S.Text(r, 11, SOFT)
-        r.rank:SetPoint("LEFT", 250, 0)
-        r.rank:SetWidth(86)
+        r.rank:SetPoint("LEFT", 228, 0)
+        r.rank:SetWidth(78)
         r.rank:SetWordWrap(false)
         r.prof = {}
         for k = 1, 4 do
             local t = r:CreateTexture(nil, "ARTWORK")
             t:SetSize(15, 15)
-            t:SetPoint("LEFT", 340 + (k - 1) * 17, 0)
+            t:SetPoint("LEFT", 312 + (k - 1) * 17, 0)
             t:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             r.prof[k] = t
         end
         r.last = S.Text(r, 11, T.dim, "RIGHT")
         r.last:SetPoint("RIGHT", -6, 0)
+        r.last:SetWidth(74)
+        r.last:SetWordWrap(false)
         r:SetScript("OnClick", function(s)
             if s.data then state.sel = s.data.full; Paint() end
         end)
         r:SetScript("OnEnter", function(s)
             s.hl:Show()
             local p = s.data
-            if not p or #p.pids == 0 then return end
+            if not p then return end
             GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
             GameTooltip:SetText(GH.Short(p.full), 1, 1, 1)
+            if p.online then
+                local who = p.onChar ~= p.full and (" on " .. GH.Short(p.onChar)) or ""
+                GameTooltip:AddLine("Online" .. who .. (ZoneOf(p) and ("  -  " .. ZoneOf(p)) or ""), 0.31, 0.84, 0.42)
+            else
+                local t = LastText({ lastH = p.lastH })
+                GameTooltip:AddLine(t ~= "" and ("Last on " .. t .. " ago") or "Offline", 0.55, 0.55, 0.55)
+            end
             for _, pid in ipairs(p.pids) do GameTooltip:AddLine(GH.ProfName(pid), 0.84, 0.77, 0.62) end
             GameTooltip:Show()
         end)

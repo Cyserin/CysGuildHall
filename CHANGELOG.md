@@ -14,6 +14,12 @@ All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 - Pop-ups (guild news toasts with a gold edge stripe, materials, shopping list, welcome, What's new) share the new look.
 - **Bigger window**: wider (800 px) and shown at 110% by default. Drag the grip in the bottom-right corner to size it (80-150%), or pick Options > Window size. The top-left corner stays put while resizing.
 - Roster: wider member list, so long names fit.
+- Roster: column headers (Name, Lvl, Rank, Professions, Status); click Name, Lvl, Rank or Status to sort (the Sort dropdown follows). Online members show their zone instead of "Online"; the row tooltip says who is on and where. The detail side uses gold-tick **Professions** and **Alts** headings, one alt per line.
+- Crafting detail: Reagents sit right under the last crafter line (or the "where to learn it" text), so there is no empty gap when few people can make it.
+- Can make it: online crafters first; hover the dot for online / last seen with the zone; hovering a row highlights it and shows Whisper, click to whisper (the online character of that player).
+- Crafting lists: "1/4 online" instead of "1 on / 4"; the recipe tooltip adds "N crafters in the guild, M online now".
+- Requests: **Show** dropdown next to the search box (All / Open / Claimed / Mine; Mine = asked for or claimed by any of your characters). The Reagents heading says who brings the mats (the requester, or the crafter when their shared counts cover everything); the list tooltip spells it out.
+- The faint Guild Hall seal behind detail panels is softer.
 - Fixed: the hint on the right of Crafting, Requests and Gaps was drawn behind the detail panel and never showed.
 
 ## 1.1.1

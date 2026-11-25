@@ -161,6 +161,36 @@ function R.Actions(r)
     return acts
 end
 
+-- Who brings the reagents: the requester, unless the crafter's shared counts cover all of them.
+-- Returns the character and a short tag ("Bob Smith", "Ann Lee (crafter has them)").
+local function CrafterCover(r)
+    local ms = r.cr and r.ms and r.ms.c
+    if not ms then return nil end
+    local c = GH.Prof.Resolve(r.rc) or {}
+    if not c.r or #c.r == 0 then return nil end
+    local all, some = true, false
+    for _, rg in ipairs(c.r) do
+        local n = ms[rg[1]] or 0
+        if n > 0 then some = true end
+        if n < rg[2] * (r.n or 1) then all = false end
+    end
+    return all, some
+end
+function R.MatsFrom(r)
+    local all, some = CrafterCover(r)
+    if all and r.st ~= "ready" then return r.cr, GH.Short(r.cr) .. " (crafter has them)" end
+    if r.st == "ready" or r.st == "done" then return r.by, GH.Short(r.by) .. " (sent)" end
+    return r.by, GH.Short(r.by) .. (some and " (crafter has some)" or "")
+end
+function R.MatsText(r)
+    local all, some = CrafterCover(r)
+    local by, cr = GH.Short(r.by), r.cr and GH.Short(r.cr)
+    if all and r.st ~= "ready" then return ("Mats: %s, the crafter, already has all of them."):format(cr) end
+    if r.st == "ready" or r.st == "done" then return ("Mats: %s sent them to %s."):format(by, cr or "the crafter") end
+    if some then return ("Mats: %s brings them; %s has some already."):format(by, cr) end
+    return ("Mats: %s brings them to the crafter."):format(by)
+end
+
 function R.StateText(r)
     local who = r.cr and GH.Short(r.cr)
     if r.st == "open" then return "Open - waiting for a crafter", "dim"

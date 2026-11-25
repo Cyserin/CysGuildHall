@@ -21,6 +21,12 @@ WN.ENTRIES = {
             "Pop-ups (guild news, materials, shopping list, welcome, What's new) share the same look.",
             "A bigger window: wider, and a little larger by default. Drag the grip in the bottom-right corner to size it, or pick Options > Window size (80% to 150%).",
             "The Roster has room for longer names.",
+            "Roster: column headers (Name, Lvl, Rank, Status): click one to sort, the Sort dropdown follows. Online members show the zone they are in. The detail side has gold Professions and Alts headings.",
+            "Crafting: Reagents move up under the last crafter, so there is no empty gap when few people can make it.",
+            "Can make it: online crafters first. Hover the dot for online / last seen (and the zone); click a crafter to whisper them.",
+            "Crafting lists read \"1/4 online\", and hovering a recipe adds how many crafters the guild has and how many are on now.",
+            "Requests: a Show dropdown next to the search box (All, Open, Claimed, Mine). The request shows who brings the mats (\"Reagents from ...\"), and hovering one in the list says it too.",
+            "The faint seal behind the detail panels is a little softer.",
         },
         fixed = {
             "The hint on the right side of Crafting, Requests and Gaps (what to pick) was hidden behind the panel. It shows now, under the seal.",
