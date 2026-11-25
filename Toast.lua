@@ -157,6 +157,28 @@ end
 
 GH.On("PLAYER_REGEN_ENABLED", function() C_Timer.After(1, Toast.Next) end)
 
+-- Names of newly learned recipes (what they make, in its quality color when known)
+local function RecipeNames(ids)
+    local names, firstItem = {}, nil
+    if not ids or not (GH.Prof and GH.Prof.Resolve) then return names end
+    for _, id in ipairs(ids) do
+        local ok, c = pcall(GH.Prof.Resolve, id)
+        c = ok and c or GH.db.recipes[id]
+        if c then
+            local n = (c.o and GH.Prof.ItemName(c.o)) or c.n
+            if n and n ~= "" then
+                local q = c.o and C_Item.GetItemQualityByID and select(2, pcall(C_Item.GetItemQualityByID, c.o))
+                local col = type(q) == "number" and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]
+                names[#names + 1] = { n = n, hex = (col and col.hex) or "|cffffffff" }
+                firstItem = firstItem or c.o
+            end
+        end
+    end
+    table.sort(names, function(a, b) return a.n < b.n end)
+    for i, e in ipairs(names) do names[i] = e.hex .. e.n .. "|r" end
+    return names, firstItem
+end
+
 GH.Listen("SHARED", function(name, news)
     local who = GH.Short(name)
     for _, e in ipairs(news) do
@@ -169,7 +191,25 @@ GH.Listen("SHARED", function(name, news)
         if e.new then
             Toast.Add(("|cffffd100%s|r added their %s recipes to the Guild Hall."):format(who, prof), icon, e.pid)
         else
-            Toast.Add(("|cffffd100%s|r learned %d new %s %s."):format(who, e.n, prof, e.n == 1 and "recipe" or "recipes"), icon, e.pid)
+            local names, item = RecipeNames(e.ids)
+            if #names == 0 then
+                Toast.Add(("|cffffd100%s|r learned %d new %s %s."):format(who, e.n, prof, e.n == 1 and "recipe" or "recipes"), icon, e.pid)
+            else
+                local list
+                if #names == 1 then
+                    list = names[1]
+                elseif #names <= 3 and #names == e.n then
+                    list = table.concat(names, ", ", 1, #names - 1) .. " and " .. names[#names]
+                else
+                    local shown = math.min(3, #names)
+                    list = table.concat(names, ", ", 1, shown) .. (" and %d more"):format(e.n - shown)
+                end
+                local text = e.n == 1
+                    and ("|cffffd100%s|r learned a new %s recipe: %s."):format(who, prof, list)
+                    or ("|cffffd100%s|r learned %d new %s recipes: %s."):format(who, e.n, prof, list)
+                -- one recipe: hover shows what it makes
+                Toast.Add(text, icon, e.pid, nil, e.n == 1 and item or nil)
+            end
         end
     end
 end)

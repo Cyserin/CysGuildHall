@@ -740,7 +740,11 @@ local function OnData(text, sender, senderRealm)
             if not old then
                 if n > 0 then news[#news + 1] = { pid = pid, new = true, n = n } end
             elseif n > #(old.r or {}) then
-                news[#news + 1] = { pid = pid, n = n - #(old.r or {}) }
+                -- which recipes are new, so the pop-up can name them
+                local had, ids = {}, {}
+                for _, id in ipairs(old.r or {}) do had[id] = true end
+                for _, id in ipairs(p.r) do if not had[id] then ids[#ids + 1] = id end end
+                news[#news + 1] = { pid = pid, n = #ids > 0 and #ids or (n - #(old.r or {})), ids = ids }
             end
         end
         if #news > 0 then GH.Fire("SHARED", name, news) end

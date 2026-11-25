@@ -11,6 +11,11 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "1.1.1",
+        improved = {
+            "Setup now asks for your main and alts right after Initialize. Pick your main, add alts by name, or click Next if you have none. You only see it once per account.",
+        },
+    },
     { version = "1.1.0",
         added = {
             "Your main & alts page (button on the Options tab, or /guildhall alts): pick which character is your main, add an alt by name or remove one. Characters on your account that run Cys's Guild Hall join by themselves. Your guildmates see your alts grouped under your main, no guild rank or note needed.",

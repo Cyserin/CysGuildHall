@@ -2,7 +2,11 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 1.1.1
+- **Main & alts in the welcome**: setup is now 3 steps. After Initialize, pick your main and add your alts by name (or click Next if you have none). Asked once per account and guild, so your other characters skip it.
+
 ## 1.1.0
+- **New recipe pop-ups name the recipes**: "Jarvik Ironfang learned a new Engineering recipe: Goblin Sapper Charge." Up to three names, then "and N more"; with a single recipe, hover shows the item it makes.
 - **Level dropdown** on the Crafting tab (next to the search box): A-Z, By level (level needed to use or equip, shown on each line, lowest first) or Up to my level (only what you can use now, highest first). Works on search results and item types.
 - **Craft from the Guild Hall**: when this character knows the recipe and the reagents are in your bags, the bottom button says Open (profession) and then Craft Nx (the Make amount, capped at what your bags make).
 - **Shopping list**: the Shopping list button next to Reagents adds the reagents you are missing for the Make amount. The list opens beside the auction house (Options switch); click a line to search for it, right-click removes it. Lines tick off as the items reach your bags or bank. Prices from Cys's Auction House when installed. `/guildhall shop`.

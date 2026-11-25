@@ -1,8 +1,9 @@
 --------------------------------------------------------------------------------
 -- Cys's Guild Hall - first run welcome
 -- Shows once per character: what the addon does, an Initialize button (loads the
--- guild roster and says hello to guildmates running the addon), then a checklist
--- of this character's crafting professions to open once. When every one is read,
+-- guild roster and says hello to guildmates running the addon), then your main &
+-- alts (once per account and guild), then a checklist of this character's crafting
+-- professions to open once. When every one is read,
 -- a full sync runs and the window says you are all set.
 --------------------------------------------------------------------------------
 local GH = CysGuildHall
@@ -18,6 +19,13 @@ local shownThisSession = false
 -- db.init[full]: nil = never started, 1 = initialized (professions pending), 2 = done
 local function State() return GH.db.init[GH.Me()] end
 local function SetState(v) GH.db.init[GH.Me()] = v end
+
+-- Main & alts step: done once per account and guild (Next pressed, or a main already
+-- picked on the Your main & alts page)
+local function AltsDone()
+    local my = GH.MyAltsCfg and GH.MyAltsCfg()
+    return not my or my.asked or my.main ~= nil
+end
 
 -- This character's crafting professions: list of { pid, name, read }
 local function Crafts()
@@ -139,6 +147,52 @@ local function Build()
     frame.note:SetWidth(WIDTH - 40)
     frame.note:SetSpacing(2)
 
+    -- main & alts step widgets
+    local a = CreateFrame("Frame", nil, frame.body)
+    a:SetSize(WIDTH - 40, 10)
+    frame.alts = a
+    local mt = S.Text(a, 12, T.text)
+    mt:SetPoint("TOPLEFT", 0, -4)
+    mt:SetText("Main")
+    a.dd = S.Dropdown(a, 220, 20, function()
+        local chars, _, guess = GH.MyChars()
+        local items = { { "", "Highest level (" .. GH.Short(guess) .. ")" } }
+        local all = {}
+        for _, c in ipairs(chars) do all[#all + 1] = c end
+        table.sort(all)
+        for _, c in ipairs(all) do items[#items + 1] = { c, GH.Short(c) } end
+        return items
+    end, function()
+        local my = GH.MyAltsCfg()
+        return my and my.main or ""
+    end, function(v)
+        local my = GH.MyAltsCfg()
+        if not my then return end
+        my.main = (v ~= "") and v or nil
+        GH.PublishMyAlts()
+        Paint()
+    end)
+    a.dd:SetPoint("TOPLEFT", 50, 0)
+    a.list = S.Text(a, 12, T.text)
+    a.list:SetWidth(WIDTH - 50)
+    a.list:SetSpacing(3)
+    a.add = S.EditBox(a, 220, 22)
+    a.add.hint:SetText("Add an alt: First Last")
+    a.add:SetScript("OnTextChanged", function(e) e.hint:SetShown(e:GetText() == "") end)
+    local function DoAdd()
+        local text = a.add:GetText()
+        a.add:SetText("")
+        a.add:ClearFocus()
+        local full, why = GH.AddMyAlt(text)
+        if not full and why then GH.Print(why) end
+        Paint()
+    end
+    a.add:SetScript("OnEnterPressed", DoAdd)
+    a.addBtn = S.Button(a, 60, 22, "Add")
+    a.addBtn:SetPoint("LEFT", a.add, "RIGHT", 6, 0)
+    a.addBtn:SetScript("OnClick", DoAdd)
+    a:Hide()
+
     frame.main = S.Button(frame, 150, 26, "Initialize")
     frame.main:SetPoint("BOTTOMRIGHT", -20, 16)
     frame.later = S.Button(frame, 90, 26, "Later")
@@ -168,6 +222,7 @@ function Paint()
     local state = State()
     local list, readable = Crafts()
     for _, r in ipairs(rows) do r:Hide() end
+    frame.alts:Hide()
     frame.main:SetActive(true)
     frame.skip:Hide()
     frame.later:Show()
@@ -180,7 +235,7 @@ function Paint()
     end
 
     if not state then
-        frame.step:SetText("STEP 1 OF 2")
+        frame.step:SetText("STEP 1 OF 3")
         frame.text:SetText("Every guildmate who runs this addon shares the recipes they know. "
             .. "Search any item and see who in the guild can make it, what it takes, and send them a craft request.\n\n"
             .. "Click |cffffd100Initialize|r to load the guild roster and say hello to guildmates who already run the addon. "
@@ -197,6 +252,46 @@ function Paint()
         Place(frame.step)
         Place(frame.text, 8)
         Place(frame.note, 12)
+    elseif not AltsDone() then
+        frame.step:SetText("STEP 2 OF 3")
+        frame.text:SetText("Do you play alts in this guild? Pick your main and add your alts, "
+            .. "so guildmates see them grouped under your main in the Roster and Can make it.")
+        Place(frame.step)
+        Place(frame.text, 8)
+        local a = frame.alts
+        a:ClearAllPoints()
+        a:SetPoint("TOPLEFT", 0, -(y + 12))
+        a.dd:Refresh()
+        local lines = {}
+        local chars = GH.MyChars()
+        for i, full in ipairs(chars) do
+            local e = GH.RosterEntry and GH.RosterEntry(full)
+            local cr, cg, cb = GH.ClassColor(full)
+            lines[#lines + 1] = ("|cff%02x%02x%02x%s|r%s  %s"):format(math.floor(cr * 255), math.floor(cg * 255),
+                math.floor(cb * 255), GH.Short(full), e and e.level and ("  |cffd6c49eLevel " .. e.level .. "|r") or "",
+                i == 1 and "|cffffd100Main|r" or "|cffd6c49eAlt|r")
+        end
+        if (GH.rosterCount or 0) == 0 then lines = { "|cffd6c49eLoading the guild roster...|r" } end
+        a.list:SetText(table.concat(lines, "\n"))
+        a.list:ClearAllPoints()
+        a.list:SetPoint("TOPLEFT", 10, -32)
+        local ly = 32 + a.list:GetStringHeight() + 12
+        a.add:ClearAllPoints()
+        a.add:SetPoint("TOPLEFT", 0, -ly)
+        a:SetHeight(ly + 22)
+        a:Show()
+        y = y + 12 + ly + 22
+        frame.note:SetText("Other characters on this account join by themselves once they log in with the addon. "
+            .. "No alts? Just click Next. Change it later with |cffffd100/guildhall alts|r.")
+        Place(frame.note, 12)
+        frame.main:SetLabel("Next")
+        frame.main:SetScript("OnClick", function()
+            local my = GH.MyAltsCfg()
+            if my then my.asked = true end
+            GH.PublishMyAlts()
+            Paint()
+        end)
+        frame.skip:Show()
     else
         local pending = 0
         for _, c in ipairs(list) do if not c.read then pending = pending + 1 end end
@@ -207,7 +302,7 @@ function Paint()
                     .. "You can still search the whole guild and send craft requests."
                 or "Open each of your profession windows once so your recipes can be shared with the guild.")
         elseif pending > 0 then
-            frame.step:SetText("STEP 2 OF 2")
+            frame.step:SetText("STEP 3 OF 3")
             frame.text:SetText("Now open each of your professions once (from your spellbook or the profession button). "
                 .. "The addon reads your recipes and shares them with the guild by itself.")
         else
@@ -266,11 +361,13 @@ local function PaintSoon()
 end
 GH.Listen("DATA", PaintSoon)
 GH.On("SKILL_LINES_CHANGED", PaintSoon)
+GH.Listen("ROSTER", PaintSoon)
+GH.Listen("ALTS", PaintSoon)
 
 -- A profession read after Initialize while the window is closed still finishes the
 -- setup (one full sync once every crafting profession is read).
 GH.Listen("DATA", function(who)
-    if who ~= GH.Me() or State() ~= 1 then return end
+    if who ~= GH.Me() or State() ~= 1 or not AltsDone() then return end
     C_Timer.After(1, function()
         if State() == 1 and #(Crafts()) > 0 and Pending() == 0 then
             FinalSync()
@@ -285,7 +382,7 @@ local function MaybeShow()
     if not IsInGuild() then return end
     -- already set up before this window existed (professions read and shared): never shown
     if not State() and #(Crafts()) > 0 and Pending() == 0 then SetState(2); return end
-    if State() == 1 and Pending() == 0 then
+    if State() == 1 and Pending() == 0 and AltsDone() then
         local list = Crafts()
         if #list > 0 then FinalSync() end
         SetState(2)
