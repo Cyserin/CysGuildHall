@@ -20,6 +20,9 @@ All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 - Crafting lists: "1/4 online" instead of "1 on / 4"; the recipe tooltip adds "N crafters in the guild, M online now".
 - Requests: **Show** dropdown next to the search box (All / Open / Claimed / Mine; Mine = asked for or claimed by any of your characters). The Reagents heading says who brings the mats (the requester, or the crafter when their shared counts cover everything); the list tooltip spells it out.
 - The faint Guild Hall seal behind detail panels is softer.
+- Roster detail: **Whisper** button (top right) when the player is online; it whispers the character they're on.
+- **Officers: alt links** for members who don't run the addon. The Roster detail of such a member shows "Alt of [name] Set / Clear" to officers; the link is shared with everyone running Cys's Guild Hall (same A message). A player's own main & alts always win over an officer link.
+- Roster: the Professions column header reads "Profs" (it was cut off); the gold tick on detail headings lines up with the text.
 - Fixed: the hint on the right of Crafting, Requests and Gaps was drawn behind the detail panel and never showed.
 
 ## 1.1.1

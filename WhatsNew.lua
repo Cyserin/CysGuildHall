@@ -27,9 +27,12 @@ WN.ENTRIES = {
             "Crafting lists read \"1/4 online\", and hovering a recipe adds how many crafters the guild has and how many are on now.",
             "Requests: a Show dropdown next to the search box (All, Open, Claimed, Mine). The request shows who brings the mats (\"Reagents from ...\"), and hovering one in the list says it too.",
             "The faint seal behind the detail panels is a little softer.",
+            "Roster: a Whisper button on the member detail when they're online (it finds the character they're on).",
+            "Officers can now group members who don't run Cys's Guild Hall under their main: pick the member on the Roster tab and use Alt of ... Set. Everyone with the addon sees it. A player's own main & alts setting always wins.",
         },
         fixed = {
             "The hint on the right side of Crafting, Requests and Gaps (what to pick) was hidden behind the panel. It shows now, under the seal.",
+            "The Professions column header on the Roster was cut off.",
         },
     },
     { version = "1.1.1",

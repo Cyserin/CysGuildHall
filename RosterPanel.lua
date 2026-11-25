@@ -51,7 +51,7 @@ end
 
 -- gold-tick section heading inside a text block (same look as S.Heading)
 local function Head(text)
-    return "|TInterface\\Buttons\\WHITE8x8:11:2:0:0:8:8:0:8:0:8:224:174:44|t  |cfff0c24a" .. text .. "|r"
+    return "|TInterface\\Buttons\\WHITE8x8:10:2:0:-1:8:8:0:8:0:8:224:174:44|t |cfff0c24a" .. text .. "|r"
 end
 
 -- zone of the character a player is on right now
@@ -385,6 +385,21 @@ local function PaintDetail(p)
         local t = LastText({ lastH = p.lastH })
         d.where:SetText(t ~= "" and ("Last on " .. t .. " ago") or "Offline")
     end
+    d.whisper:SetShown(p.online and p.onChar ~= GH.Me() and true or false)
+    d.whisper.who = p.onChar
+    -- officers: put a member who doesn't run the addon under a main
+    local off = not p.ver and GH.IsOfficer()
+    d.off:SetShown(off)
+    d.text:ClearAllPoints()
+    d.text:SetPoint("TOPLEFT", d.where, "BOTTOMLEFT", 0, -10)
+    d.text:SetPoint("BOTTOMRIGHT", d.body, "BOTTOMRIGHT", -10, off and 40 or 10)
+    if off then
+        d.off.who = p.full
+        local m = GH.OfficerMainOf(p.full)
+        if not d.offEdit:HasFocus() then d.offEdit:SetText(m and GH.Short(m) or "") end
+        d.offEdit.hint:SetShown(d.offEdit:GetText() == "")
+        d.offClear:SetShown(m and true or false)
+    end
 
     local lines = {}
     local function Add(s) lines[#lines + 1] = s end
@@ -584,7 +599,7 @@ function UI.Build(frame)
     panel.heads = {}
     local HEADS = {
         { "name", "Name", 42, 150, "LEFT" }, { "level", "Lvl", 202, 22, "RIGHT" }, { "rank", "Rank", 230, 76, "LEFT" },
-        { nil, "Professions", 314, 66, "LEFT" }, { "online", "Status", 384, 76, "RIGHT" },
+        { nil, "Profs", 314, 66, "LEFT" }, { "online", "Status", 384, 76, "RIGHT" },
     }
     for _, hd in ipairs(HEADS) do
         local key = hd[1]
@@ -727,6 +742,53 @@ function UI.Build(frame)
     d.text:SetJustifyV("TOP")
     d.text:SetWordWrap(true)
     if d.text.SetSpacing then d.text:SetSpacing(3) end
+
+    -- whisper the player (their online character)
+    d.whisper = S.Button(body, 64, 20, "Whisper")
+    d.whisper:SetPoint("TOPRIGHT", -10, -10)
+    d.whisper:HookScript("OnClick", function(s)
+        if s.who then ChatFrame_SendTell(GH.RosterName(s.who)) end
+    end)
+
+    -- officer row: "Alt of [main] Set / Clear"
+    local off = CreateFrame("Frame", nil, body)
+    off:SetHeight(22)
+    off:SetPoint("BOTTOMLEFT", 10, 10)
+    off:SetPoint("BOTTOMRIGHT", -10, 10)
+    d.off = off
+    local lbl = S.Text(off, 11, SOFT)
+    lbl:SetPoint("LEFT")
+    lbl:SetText("Alt of")
+    local ed = S.EditBox(off, 120, 22)
+    ed:SetPoint("LEFT", lbl, "RIGHT", 6, 0)
+    ed.hint:SetText("main's name")
+    ed:HookScript("OnTextChanged", function(s) s.hint:SetShown(s:GetText() == "") end)
+    d.offEdit = ed
+    local function Apply(text)
+        local ok, why = GH.SetOfficerLink(off.who, text)
+        if not ok then GH.Print("Can't link: " .. (why or "?"))
+        elseif ok == true then GH.Print(GH.Short(off.who) .. " is no longer linked as an alt.")
+        else GH.Print(GH.Short(off.who) .. " is now an alt of " .. GH.Short(ok) .. ".") end
+        ed:ClearFocus()
+        Paint()
+    end
+    local set = S.Button(off, 44, 22, "Set")
+    set:SetPoint("LEFT", ed, "RIGHT", 6, 0)
+    set:HookScript("OnClick", function() Apply(ed:GetText()) end)
+    ed:SetScript("OnEnterPressed", function(s) Apply(s:GetText()) end)
+    local clr = S.Button(off, 50, 22, "Clear")
+    clr:SetPoint("LEFT", set, "RIGHT", 6, 0)
+    clr:HookScript("OnClick", function() ed:SetText(""); Apply("") end)
+    d.offClear = clr
+    for _, f in ipairs({ set, ed }) do
+        f:HookScript("OnEnter", function(s)
+            GameTooltip:SetOwner(s, "ANCHOR_TOP")
+            GameTooltip:AddLine("Officer: alt link", 1, 0.82, 0)
+            GameTooltip:AddLine("Group this member under a main for everyone running Cys's Guild Hall. For members who don't run the addon; a player's own main & alts always win.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        f:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    end
 
     panel.memberParts = { search, onl, sort, box, panel.count, key, d }
 

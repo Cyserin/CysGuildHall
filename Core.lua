@@ -307,8 +307,8 @@ function GH.BuildAlts()
     local all, isMain, owner = {}, {}, {}
     -- 1. links players set themselves (newest wins when two disagree)
     local g = GH.Guild()
-    for _, L in pairs(g and g.links or {}) do
-        local main = InGuild(L.m)
+    for key, L in pairs(g and g.links or {}) do
+        local main = not GH.IsOfficerKey(key) and InGuild(L.m)
         if main then
             isMain[main] = true
             for _, a in ipairs(L.a or {}) do
@@ -318,6 +318,24 @@ function GH.BuildAlts()
                 end
             end
         end
+    end
+    -- 1b. links officers set for members (a player's own link always wins)
+    local offOwner = {}
+    for key, L in pairs(g and g.links or {}) do
+        local main = GH.IsOfficerKey(key) and InGuild(L.m)
+        if main and not all[main] then
+            for _, a in ipairs(L.a or {}) do
+                local alt = InGuild(a)
+                if alt and alt ~= main and not owner[alt] and not isMain[alt]
+                    and (not offOwner[alt] or (L.rev or 0) > offOwner[alt]) then
+                    all[alt], offOwner[alt] = main, L.rev or 0
+                end
+            end
+        end
+    end
+    for key, L in pairs(g and g.links or {}) do
+        local main = GH.IsOfficerKey(key) and L.a and #L.a > 0 and InGuild(L.m)
+        if main and not all[main] then isMain[main] = true end
     end
     -- 2 + 3. notes
     for full, e in pairs(GH.roster) do
@@ -405,12 +423,11 @@ function GH.MyChars()
     return out, picked and true or false, guess
 end
 
--- Add an alt by typed name ("First Last" or a first name only one member has).
+-- A member by typed name ("First Last" or a first name only one member has).
 -- Returns the member's name, or nil + why not.
-function GH.AddMyAlt(text)
-    local my = My()
+function GH.FindMember(text)
     text = (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
-    if not my or text == "" then return nil end
+    if text == "" then return nil end
     local first, last = text:match("^(%S+)[%s%-]+(%S+)$")
     local e = first and GH.rosterLower[(first .. "-" .. last):lower()]
     local full = e and e.full
@@ -420,6 +437,15 @@ function GH.AddMyAlt(text)
         elseif list and #list > 1 then return nil, "more than one member is named " .. text .. ": type the last name too." end
     end
     if not full then return nil, text .. " is not in the guild roster." end
+    return full
+end
+
+-- Add an alt by typed name. Returns the member's name, or nil + why not.
+function GH.AddMyAlt(text)
+    local my = My()
+    if not my then return nil end
+    local full, why = GH.FindMember(text)
+    if not full then return nil, why end
     my.off[full] = nil
     local have
     for _, a in ipairs(my.add) do if a == full then have = true end end
@@ -468,6 +494,88 @@ function GH.PublishMyAlts()
     GH.BuildAlts()
     GH.Fire("ALTS")
     if GH.Comm and GH.Comm.SendLink then GH.Comm.SendLink(GH.db.acct, 0.5) end
+end
+
+--------------------------------------------------------------------------------
+-- Officer links: officers group a member who doesn't run the addon under a main.
+-- Stored with the player links as g.links["OL" .. hash of the main] = { rev, m, a }
+-- (player ids are lowercase, so "OL" never clashes) and shared the same way.
+--------------------------------------------------------------------------------
+function GH.IsOfficerKey(key) return type(key) == "string" and key:sub(1, 2) == "OL" end
+
+function GH.IsOfficer() return CanEditOfficerNote and CanEditOfficerNote() and true or false end
+
+local function OfficerKey(main)
+    local h = 5381
+    for i = 1, #main do h = (h * 33 + main:lower():byte(i)) % 2147483647 end
+    return "OL" .. GH.To36(h)
+end
+
+-- The main an officer link puts this member under (nil = none)
+function GH.OfficerMainOf(full)
+    local g = GH.Guild()
+    full = InGuild(full)
+    if not g or not full then return nil end
+    local best, rev
+    for key, L in pairs(g.links or {}) do
+        if GH.IsOfficerKey(key) then
+            for _, a in ipairs(L.a or {}) do
+                if InGuild(a) == full and (not rev or (L.rev or 0) > rev) then best, rev = InGuild(L.m), L.rev or 0 end
+            end
+        end
+    end
+    return best
+end
+
+-- Put a member under a main (mainText typed), or take them out (empty text).
+-- Returns the main's name (or true when unlinked), or nil + why not.
+function GH.SetOfficerLink(alt, mainText)
+    local g = GH.Guild()
+    alt = InGuild(alt)
+    if not g or not alt then return nil, "pick a member first." end
+    if not GH.IsOfficer() then return nil, "only officers can link alts." end
+    local main, why
+    if mainText and mainText:find("%S") then
+        main, why = GH.FindMember(mainText)
+        if not main then return nil, why end
+        if main == alt then return nil, "a character can't be its own alt." end
+    end
+    g.links = g.links or {}
+    local changed = {}
+    local function Save(key, L)
+        L.rev = math.max(GetServerTime(), (L.rev or 0) + 1)
+        g.links[key] = L
+        changed[#changed + 1] = key
+    end
+    -- out of every other officer link first
+    for key, L in pairs(g.links) do
+        if GH.IsOfficerKey(key) and (not main or InGuild(L.m) ~= main) then
+            local keep, hit = {}, false
+            for _, a in ipairs(L.a or {}) do
+                if InGuild(a) == alt then hit = true else keep[#keep + 1] = a end
+            end
+            if hit then Save(key, { m = L.m, a = keep, rev = L.rev }) end
+        end
+    end
+    if main then
+        local key = OfficerKey(main)
+        local L = g.links[key] or { m = main, a = {} }
+        local have = false
+        for _, a in ipairs(L.a or {}) do if InGuild(a) == alt then have = true end end
+        if not have then
+            local a = {}
+            for _, x in ipairs(L.a or {}) do a[#a + 1] = x end
+            a[#a + 1] = alt
+            table.sort(a)
+            Save(key, { m = main, a = a, rev = L.rev })
+        end
+    end
+    GH.BuildAlts()
+    GH.Fire("ALTS")
+    if GH.Comm and GH.Comm.SendLink then
+        for _, key in ipairs(changed) do GH.Comm.SendLink(key, 0.5) end
+    end
+    return main or true
 end
 
 -- A link from the guild (Comm); the newest revision wins
