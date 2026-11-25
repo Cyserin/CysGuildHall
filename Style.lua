@@ -11,45 +11,83 @@ local function Hex(hex, a)
     return { tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, a or 1 }
 end
 
+local WHITE = "Interface\\Buttons\\WHITE8x8"
+local LOGO = "Interface\\AddOns\\CysGuildHall\\Media\\Logo"
+S.LOGO = LOGO
+
+-- 1.2.0 palette: near-black panels, a muted gold edge, bright gold only where it matters
 local OWN = {
-    bg = Hex("16130F", 0.97), header = Hex("1B1713"), field = Hex("0E0C0A"), card = Hex("1C1814"),
-    cardHover = Hex("231E19"), button = Hex("201B16"), selected = Hex("27211B"), line = Hex("332C24"),
-    border = Hex("D9A421", 0.7), brand = Hex("D9A421"), glow = Hex("FFD100"), accent = Hex("FFD100"),
-    text = Hex("E0E0E0"), dim = Hex("8A8A8A"), green = Hex("4FD66B"), danger = Hex("FF4040"),
+    bg = Hex("0E0D0C", 0.97), header = Hex("161411"), field = Hex("0A0A09", 0.92), card = Hex("0C0B0A", 0.92),
+    cardHover = Hex("D9A421", 0.07), button = Hex("1A1815"), selected = Hex("D9A421", 0.13), line = Hex("2A2621"),
+    border = Hex("D9A421", 0.42), brand = Hex("E0AE2C"), glow = Hex("F5CB55"), accent = Hex("F0C24A"),
+    text = Hex("EDEAE4"), dim = Hex("8C8882"), green = Hex("58D873"), danger = Hex("FF5A4E"), edge = Hex("000000"),
 }
 
--- Colors: Cys's UI's table when present (read when the panel is built), else our own
+-- Fully standalone. If Cys's UI is loaded, only its theme color is borrowed so the gold matches.
+local themed
 function S.T()
+    if themed then return OWN end
+    themed = true
     local W = CysUI and CysUI.W
-    if W and W.T and W.T.border then
-        local T = W.T
-        -- fill gaps so every key we use exists
-        for k, v in pairs(OWN) do if T[k] == nil then T[k] = v end end
-        return T
+    local b = W and W.T and W.T.brand
+    if b and b[1] then
+        OWN.brand = { b[1], b[2], b[3], 1 }
+        OWN.border = { b[1], b[2], b[3], 0.42 }
+        OWN.cardHover = { b[1], b[2], b[3], 0.07 }
+        OWN.selected = { b[1], b[2], b[3], 0.13 }
     end
     return OWN
 end
 
-local function CUIW() return CysUI and CysUI.W end
+--------------------------------------------------------------------------------
+-- Fonts: Clean (Arial Narrow, sharp at small sizes) or Classic (Friz Quadrata).
+-- Titles (14+) always use Friz for the Guild Hall character. Options > Text font.
+--------------------------------------------------------------------------------
+local CLEAN = "Fonts\\ARIALN.TTF"
+function S.Clean()
+    local db = GH.db
+    return not (db and db.settings and db.settings.font == "classic")
+end
+function S.F() return S.Clean() and CLEAN or STANDARD_TEXT_FONT end
+function S.SetFont(fs, size, flags)
+    size = size or 12
+    if size >= 14 then
+        fs:SetFont(STANDARD_TEXT_FONT, size, flags or "")
+    elseif S.Clean() then
+        fs:SetFont(CLEAN, size + 1, flags or "")
+    else
+        fs:SetFont(STANDARD_TEXT_FONT, size, flags or "")
+    end
+end
 
 function S.Tex(parent, layer, color, sublevel)
     local t = parent:CreateTexture(nil, layer or "BACKGROUND", nil, sublevel or 0)
     t:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
-    local W = CUIW()
-    if W and W.TrackEdge then
-        local T = S.T()
-        if color == T.border then W.TrackEdge(t) end
-    end
     return t
 end
 
-function S.Border(parent, color, layer)
+-- Vertical gradient on a texture (top -> bottom); quietly skipped on clients without it
+local function Grad(t, top, bottom)
+    if not (t.SetGradient and CreateColor) then return end
+    pcall(t.SetGradient, t, "VERTICAL", CreateColor(bottom[1], bottom[2], bottom[3], bottom[4] or 1),
+        CreateColor(top[1], top[2], top[3], top[4] or 1))
+end
+local function HGrad(t, left, right)
+    if not (t.SetGradient and CreateColor) then return end
+    pcall(t.SetGradient, t, "HORIZONTAL", CreateColor(left[1], left[2], left[3], left[4] or 1),
+        CreateColor(right[1], right[2], right[3], right[4] or 1))
+end
+S.Grad, S.HGrad = Grad, HGrad
+
+-- 1px edge, inset px inside the parent (default 0)
+function S.Border(parent, color, layer, inset)
     local e = {}
-    for i = 1, 4 do e[i] = S.Tex(parent, layer or "BORDER", color) end
-    e[1]:SetPoint("TOPLEFT");    e[1]:SetPoint("TOPRIGHT");    e[1]:SetHeight(1)
-    e[2]:SetPoint("BOTTOMLEFT"); e[2]:SetPoint("BOTTOMRIGHT"); e[2]:SetHeight(1)
-    e[3]:SetPoint("TOPLEFT");    e[3]:SetPoint("BOTTOMLEFT");  e[3]:SetWidth(1)
-    e[4]:SetPoint("TOPRIGHT");   e[4]:SetPoint("BOTTOMRIGHT"); e[4]:SetWidth(1)
+    local i = inset or 0
+    for k = 1, 4 do e[k] = S.Tex(parent, layer or "BORDER", color) end
+    e[1]:SetPoint("TOPLEFT", i, -i);    e[1]:SetPoint("TOPRIGHT", -i, -i);    e[1]:SetHeight(1)
+    e[2]:SetPoint("BOTTOMLEFT", i, i);  e[2]:SetPoint("BOTTOMRIGHT", -i, i);  e[2]:SetHeight(1)
+    e[3]:SetPoint("TOPLEFT", i, -i);    e[3]:SetPoint("BOTTOMLEFT", i, i);    e[3]:SetWidth(1)
+    e[4]:SetPoint("TOPRIGHT", -i, -i);  e[4]:SetPoint("BOTTOMRIGHT", -i, i);  e[4]:SetWidth(1)
     return e
 end
 
@@ -57,13 +95,99 @@ function S.SetBorder(edges, color)
     for i = 1, #edges do edges[i]:SetColorTexture(color[1], color[2], color[3], color[4] or 1) end
 end
 
+-- Soft drop shadow just outside a frame
+function S.Shadow(f, size)
+    for i = 1, (size or 5) do
+        local t = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+        t:SetColorTexture(0, 0, 0, 0.13)
+        t:SetPoint("TOPLEFT", -i, i)
+        t:SetPoint("BOTTOMRIGHT", i, -i)
+    end
+end
+
+-- Window chrome: shadow, dark fill with a faint top sheen, black outer line, muted gold inner line
+function S.Chrome(f, color)
+    local T = S.T()
+    S.Shadow(f)
+    local bg = S.Tex(f, "BACKGROUND", color or T.bg, -7)
+    bg:SetAllPoints()
+    local sheen = f:CreateTexture(nil, "BACKGROUND", nil, -6)
+    sheen:SetTexture(WHITE)
+    sheen:SetPoint("TOPLEFT", 2, -2)
+    sheen:SetPoint("TOPRIGHT", -2, -2)
+    sheen:SetHeight(90)
+    Grad(sheen, { 1, 1, 1, 0.035 }, { 1, 1, 1, 0 })
+    f.edgeOuter = S.Border(f, T.edge, "BORDER")
+    f.edgeInner = S.Border(f, T.border, "BORDER", 1)
+    return bg
+end
+
+-- Header strip: slightly lifted fill and a gold hairline underneath that fades at both ends
+function S.HeaderBg(h)
+    local T = S.T()
+    local bg = h:CreateTexture(nil, "BACKGROUND")
+    bg:SetTexture(WHITE)
+    bg:SetPoint("TOPLEFT", 1, -1)
+    bg:SetPoint("BOTTOMRIGHT", -1, 0)
+    Grad(bg, { T.header[1] * 1.25, T.header[2] * 1.25, T.header[3] * 1.25, 1 }, T.header)
+    local b = T.brand
+    local l = h:CreateTexture(nil, "ARTWORK")
+    l:SetTexture(WHITE)
+    l:SetHeight(1)
+    l:SetPoint("BOTTOMLEFT", 1, 0)
+    l:SetPoint("BOTTOMRIGHT", h, "BOTTOM", 0, 0)
+    HGrad(l, { b[1], b[2], b[3], 0.05 }, { b[1], b[2], b[3], 0.6 })
+    local r = h:CreateTexture(nil, "ARTWORK")
+    r:SetTexture(WHITE)
+    r:SetHeight(1)
+    r:SetPoint("BOTTOMLEFT", h, "BOTTOM", 0, 0)
+    r:SetPoint("BOTTOMRIGHT", -1, 0)
+    HGrad(r, { b[1], b[2], b[3], 0.6 }, { b[1], b[2], b[3], 0.05 })
+    return bg
+end
+
+-- The Guild Hall seal, for headers
+function S.Emblem(parent, size)
+    local t = parent:CreateTexture(nil, "ARTWORK")
+    t:SetTexture(LOGO)
+    t:SetSize(size or 22, size or 22)
+    return t
+end
+
+-- Big faint seal behind an empty detail panel
+function S.Watermark(panel, size)
+    local t = panel:CreateTexture(nil, "BACKGROUND", nil, 2)
+    t:SetTexture(LOGO)
+    t:SetSize(size or 150, size or 150)
+    t:SetPoint("CENTER")
+    t:SetAlpha(0.05)
+    t:SetDesaturated(true)
+    return t
+end
+
 function S.Text(parent, size, color, justify)
     local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(STANDARD_TEXT_FONT, size or 12, "")
+    S.SetFont(fs, size or 12)
     fs:SetShadowOffset(1, -1)
-    fs:SetShadowColor(0, 0, 0, 0.8)
+    fs:SetShadowColor(0, 0, 0, 1)
     if color then fs:SetTextColor(color[1], color[2], color[3], color[4] or 1) end
     fs:SetJustifyH(justify or "LEFT")
+    return fs
+end
+
+-- Section heading: gold label with a short gold tick to its left
+function S.Heading(parent, text)
+    local T = S.T()
+    local fs = S.Text(parent, 12, T.accent)
+    fs:SetText(text or "")
+    local bar = parent:CreateTexture(nil, "ARTWORK")
+    bar:SetColorTexture(T.brand[1], T.brand[2], T.brand[3], 0.9)
+    bar:SetSize(2, 11)
+    bar:SetPoint("RIGHT", fs, "LEFT", -5, 0)
+    fs.bar = bar
+    local set = fs.SetText
+    fs.SetText = function(self, t) set(self, t); bar:SetShown(t ~= nil and t ~= "") end
+    fs:SetText(text or "")
     return fs
 end
 
@@ -77,22 +201,126 @@ function S.Panel(parent, color, edge)
     return f
 end
 
+-- Selected-row fill with a gold bar on the left edge; shows and hides as one texture
+function S.Selection(row)
+    local T = S.T()
+    local t = S.Tex(row, "BACKGROUND", T.selected, 1)
+    t:SetAllPoints()
+    local bar = S.Tex(row, "ARTWORK", T.brand, 2)
+    bar:SetWidth(2)
+    bar:SetPoint("TOPLEFT")
+    bar:SetPoint("BOTTOMLEFT")
+    bar:Hide()
+    local show, hide, shown = t.Show, t.Hide, t.SetShown
+    t.Show = function(s) show(s); bar:Show() end
+    t.Hide = function(s) hide(s); bar:Hide() end
+    t.SetShown = function(s, v) shown(s, v); bar:SetShown(v and true or false) end
+    return t
+end
+
 function S.Button(parent, w, h, label)
     local T = S.T()
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(w, h)
     b.bg = S.Tex(b, "BACKGROUND", T.button)
     b.bg:SetAllPoints()
+    local sheen = b:CreateTexture(nil, "BACKGROUND", nil, 1)
+    sheen:SetTexture(WHITE)
+    sheen:SetPoint("TOPLEFT", 1, -1)
+    sheen:SetPoint("BOTTOMRIGHT", -1, 1)
+    Grad(sheen, { 1, 1, 1, 0.05 }, { 1, 1, 1, 0 })
+    b.hover = S.Tex(b, "BACKGROUND", { T.brand[1], T.brand[2], T.brand[3], 0.09 }, 2)
+    b.hover:SetAllPoints()
+    b.hover:Hide()
     b.edges = S.Border(b, T.line)
     b.label = S.Text(b, 11, T.accent, "CENTER")
     b.label:SetPoint("CENTER")
     b.label:SetText(label or "")
-    b:SetScript("OnEnter", function(s) if s:IsEnabled() then S.SetBorder(s.edges, T.glow) end end)
-    b:SetScript("OnLeave", function(s) S.SetBorder(s.edges, T.line) end)
+    local edgeOn = { T.brand[1], T.brand[2], T.brand[3], 0.75 }
+    b:SetScript("OnEnter", function(s) if s:IsEnabled() then S.SetBorder(s.edges, edgeOn); s.hover:Show() end end)
+    b:SetScript("OnLeave", function(s) S.SetBorder(s.edges, T.line); s.hover:Hide() end)
+    -- pressed: nudge a centered label (left-aligned labels, like dropdowns, stay put)
+    b:SetScript("OnMouseDown", function(s)
+        if s:IsEnabled() and s.label:GetNumPoints() == 1 and select(3, s.label:GetPoint(1)) == "CENTER" then s.label:SetPoint("CENTER", 1, -1) end
+    end)
+    b:SetScript("OnMouseUp", function(s)
+        if s.label:GetNumPoints() == 1 and select(3, s.label:GetPoint(1)) == "CENTER" then s.label:SetPoint("CENTER", 0, 0) end
+    end)
     function b:SetActive(on)
-        if on then self:Enable(); self:SetAlpha(1) else self:Disable(); self:SetAlpha(0.45); S.SetBorder(self.edges, T.line) end
+        if on then self:Enable(); self:SetAlpha(1) else self:Disable(); self:SetAlpha(0.4); S.SetBorder(self.edges, T.line); self.hover:Hide() end
     end
     function b:SetLabel(text) self.label:SetText(text or "") end
+    return b
+end
+
+-- Close button: a thin drawn X, red on hover
+function S.Close(parent, size)
+    local T = S.T()
+    local b = CreateFrame("Button", nil, parent)
+    size = size or 22
+    b:SetSize(size, size)
+    b.edges = {}
+    b.lines = {}
+    for i, rot in ipairs({ math.pi / 4, -math.pi / 4 }) do
+        local l = b:CreateTexture(nil, "ARTWORK")
+        l:SetTexture(WHITE)
+        l:SetSize(math.floor(size * 0.55), 1.5)
+        l:SetPoint("CENTER")
+        l:SetRotation(rot)
+        l:SetVertexColor(T.dim[1], T.dim[2], T.dim[3])
+        b.lines[i] = l
+    end
+    b.hover = S.Tex(b, "BACKGROUND", { T.danger[1], T.danger[2], T.danger[3], 0.12 })
+    b.hover:SetAllPoints()
+    b.hover:Hide()
+    local function Paint(c) for _, l in ipairs(b.lines) do l:SetVertexColor(c[1], c[2], c[3]) end end
+    b:SetScript("OnEnter", function(s) if s:IsEnabled() then Paint(T.danger); s.hover:Show() end end)
+    b:SetScript("OnLeave", function(s) Paint(T.dim); s.hover:Hide() end)
+    b.label = S.Text(b, 11, T.text, "CENTER") -- unused, kept so :SetLabel callers don't break
+    function b:SetActive(on)
+        if on then self:Enable(); self:SetAlpha(1) else self:Disable(); self:SetAlpha(0.4) end
+    end
+    function b:SetLabel() end
+    return b
+end
+
+-- Header tab: text with a gold underline when selected. Sizes itself to its text.
+function S.Tab(parent, label)
+    local T = S.T()
+    local b = CreateFrame("Button", nil, parent)
+    b:SetHeight(parent:GetHeight() > 0 and parent:GetHeight() or 30)
+    b.label = S.Text(b, 12, T.dim, "CENTER")
+    b.label:SetPoint("CENTER", 0, 0)
+    b.hover = S.Tex(b, "BACKGROUND", { 1, 1, 1, 0.03 })
+    b.hover:SetPoint("TOPLEFT", 0, -1)
+    b.hover:SetPoint("BOTTOMRIGHT", 0, 1)
+    b.hover:Hide()
+    b.under = S.Tex(b, "OVERLAY", T.glow)
+    b.under:SetHeight(2)
+    b.under:SetPoint("BOTTOMLEFT", 6, 0)
+    b.under:SetPoint("BOTTOMRIGHT", -6, 0)
+    b.under:Hide()
+    b.bg = b.hover -- older callers recolor .bg; harmless
+    local function Color(s)
+        local c = s.on and T.glow or (s:IsMouseOver() and T.text or T.dim)
+        s.label:SetTextColor(c[1], c[2], c[3])
+    end
+    b:SetScript("OnEnter", function(s) s.hover:Show(); Color(s) end)
+    b:SetScript("OnLeave", function(s) s.hover:Hide(); Color(s) end)
+    function b:SetLabel(text)
+        self.label:SetText(text or "")
+        self:SetWidth(math.ceil(self.label:GetStringWidth()) + 22)
+    end
+    function b:SetSelected(on)
+        self.on = on and true or false
+        self.under:SetShown(self.on)
+        Color(self)
+    end
+    function b:SetActive(on)
+        if on then self:Enable(); self:SetAlpha(1) else self:Disable(); self:SetAlpha(0.4) end
+    end
+    b:SetLabel(label)
+    b:SetSelected(false)
     return b
 end
 
@@ -105,16 +333,27 @@ function S.Check(parent, label, get, set)
     box:SetSize(14, 14)
     box:SetPoint("LEFT")
     S.Tex(box, "BACKGROUND", T.field):SetAllPoints()
-    c.edges = S.Border(box, T.border)
-    c.mark = S.Tex(box, "ARTWORK", T.glow)
-    c.mark:SetPoint("TOPLEFT", 3, -3)
-    c.mark:SetPoint("BOTTOMRIGHT", -3, 3)
+    c.edges = S.Border(box, T.line)
+    c.fill = S.Tex(box, "BACKGROUND", { T.brand[1], T.brand[2], T.brand[3], 0.16 }, 1)
+    c.fill:SetPoint("TOPLEFT", 1, -1)
+    c.fill:SetPoint("BOTTOMRIGHT", -1, 1)
+    c.mark = box:CreateTexture(nil, "ARTWORK")
+    c.mark:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    c.mark:SetSize(20, 20)
+    c.mark:SetPoint("CENTER", 1, 1)
+    c.mark:SetVertexColor(T.glow[1], T.glow[2], T.glow[3])
     c.label = S.Text(c, 11, T.text)
     c.label:SetPoint("LEFT", box, "RIGHT", 6, 0)
     c.label:SetText(label)
     c:SetWidth(22 + c.label:GetStringWidth())
-    function c:Refresh() self.mark:SetShown(get() and true or false) end
+    function c:Refresh()
+        local on = get() and true or false
+        self.mark:SetShown(on)
+        self.fill:SetShown(on)
+    end
     c:SetScript("OnClick", function(s) set(not get()); s:Refresh() end)
+    c:SetScript("OnEnter", function(s) S.SetBorder(s.edges, { T.brand[1], T.brand[2], T.brand[3], 0.8 }); s.label:SetTextColor(1, 1, 1) end)
+    c:SetScript("OnLeave", function(s) S.SetBorder(s.edges, T.line); s.label:SetTextColor(T.text[1], T.text[2], T.text[3]) end)
     c:Refresh()
     return c
 end
@@ -125,17 +364,30 @@ function S.EditBox(parent, w, h)
     local e = CreateFrame("EditBox", nil, parent)
     e:SetSize(w, h)
     e:SetAutoFocus(false)
-    e:SetFont(STANDARD_TEXT_FONT, 12, "")
+    S.SetFont(e, 12)
     e:SetTextColor(T.text[1], T.text[2], T.text[3])
     e:SetTextInsets(6, 6, 0, 0)
     S.Tex(e, "BACKGROUND", T.field):SetAllPoints()
     e.edges = S.Border(e, T.line)
-    e:SetScript("OnEditFocusGained", function(s) S.SetBorder(s.edges, T.border) end)
+    e:SetScript("OnEditFocusGained", function(s) S.SetBorder(s.edges, { T.brand[1], T.brand[2], T.brand[3], 0.8 }) end)
     e:SetScript("OnEditFocusLost", function(s) S.SetBorder(s.edges, T.line) end)
     e:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
     e:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
     e.hint = S.Text(e, 11, T.dim)
     e.hint:SetPoint("LEFT", 7, 0)
+    -- search boxes: a magnifier on the left, text and hint moved past it
+    function e:SetSearch()
+        local icon = self:CreateTexture(nil, "OVERLAY")
+        icon:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
+        icon:SetSize(13, 13)
+        icon:SetPoint("LEFT", 6, -1)
+        icon:SetVertexColor(T.dim[1], T.dim[2], T.dim[3])
+        self:SetTextInsets(22, 6, 0, 0)
+        self.hint:SetPoint("LEFT", 23, 0)
+        self:HookScript("OnEditFocusGained", function() icon:SetVertexColor(T.accent[1], T.accent[2], T.accent[3]) end)
+        self:HookScript("OnEditFocusLost", function() icon:SetVertexColor(T.dim[1], T.dim[2], T.dim[3]) end)
+        return self
+    end
     return e
 end
 
@@ -234,8 +486,7 @@ local function OpenMenu(owner)
         menu:SetFrameStrata("FULLSCREEN_DIALOG")
         menu:SetFrameLevel(catcher:GetFrameLevel() + 10)
         menu:SetClampedToScreen(true)
-        S.Tex(menu, "BACKGROUND", T.bg):SetAllPoints()
-        S.Border(menu, T.border)
+        S.Chrome(menu, { 0.07, 0.065, 0.06, 0.98 })
         menu.rows = {}
     end
     local items = owner.items() or {}
@@ -249,11 +500,12 @@ local function OpenMenu(owner)
             r.hl = S.Tex(r, "BACKGROUND", T.cardHover)
             r.hl:SetAllPoints()
             r.hl:Hide()
-            r.mark = S.Tex(r, "ARTWORK", T.accent)
-            r.mark:SetSize(5, 5)
-            r.mark:SetPoint("LEFT", 8, 0)
+            r.mark = S.Tex(r, "ARTWORK", T.brand)
+            r.mark:SetWidth(2)
+            r.mark:SetPoint("TOPLEFT", 1, -3)
+            r.mark:SetPoint("BOTTOMLEFT", 1, 3)
             r.text = S.Text(r, 11, T.text)
-            r.text:SetPoint("LEFT", 20, 0)
+            r.text:SetPoint("LEFT", 12, 0)
             r.text:SetWordWrap(false)
             r:SetScript("OnEnter", function(s) s.hl:Show() end)
             r:SetScript("OnLeave", function(s) s.hl:Hide() end)
@@ -268,8 +520,8 @@ local function OpenMenu(owner)
             menu.rows[i] = r
         end
         r:ClearAllPoints()
-        r:SetPoint("TOPLEFT", 1, -1 - (i - 1) * MENU_ROW)
-        r:SetPoint("TOPRIGHT", -1, -1 - (i - 1) * MENU_ROW)
+        r:SetPoint("TOPLEFT", 2, -3 - (i - 1) * MENU_ROW)
+        r:SetPoint("TOPRIGHT", -2, -3 - (i - 1) * MENU_ROW)
         r.value = it[1]
         r.text:SetText(it[2])
         local on = it[1] == cur
@@ -280,7 +532,7 @@ local function OpenMenu(owner)
         r:Show()
     end
     for i = #items + 1, #menu.rows do menu.rows[i]:Hide() end
-    menu:SetSize(math.max(owner:GetWidth(), widest + 30), #items * MENU_ROW + 2)
+    menu:SetSize(math.max(owner:GetWidth(), widest + 28), #items * MENU_ROW + 6)
     menu:ClearAllPoints()
     menu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -2)
     menu.owner = owner
@@ -298,12 +550,13 @@ function S.Dropdown(parent, w, h, items, get, set)
     b.label:SetJustifyH("LEFT")
     b.label:SetWordWrap(false)
     -- small gold chevron, drawn from two lines
-    for i, side in ipairs({ -1, 1 }) do
+    b.label:SetTextColor(T.text[1], T.text[2], T.text[3])
+    for _, side in ipairs({ -1, 1 }) do
         local l = b:CreateTexture(nil, "ARTWORK")
         l:SetColorTexture(T.accent[1], T.accent[2], T.accent[3], 1)
-        l:SetSize(5, 1.5)
-        l:SetPoint("CENTER", b, "RIGHT", -10 + side * 1.6, 0)
-        l:SetRotation(side * -math.pi / 4)
+        l:SetSize(6, 1.5)
+        l:SetPoint("CENTER", b, "RIGHT", -10 + side * 2, -1)
+        l:SetRotation(side * math.pi / 4)
     end
     function b:Refresh()
         local cur = self.get()
@@ -327,13 +580,17 @@ function S.ScrollBar(parent, onScroll)
     local sb = CreateFrame("Frame", nil, parent)
     sb:SetWidth(8)
     sb:EnableMouse(true)
-    local track = S.Tex(sb, "BACKGROUND", T.line)
-    track:SetAllPoints()
+    local track = S.Tex(sb, "BACKGROUND", { 1, 1, 1, 0.04 })
+    track:SetPoint("TOP")
+    track:SetPoint("BOTTOM")
+    track:SetWidth(2)
     local thumb = CreateFrame("Frame", nil, sb)
     thumb:SetWidth(8)
     thumb:EnableMouse(true)
     thumb.tex = S.Tex(thumb, "ARTWORK", { T.brand[1], T.brand[2], T.brand[3], 0.55 })
-    thumb.tex:SetAllPoints()
+    thumb.tex:SetPoint("TOP")
+    thumb.tex:SetPoint("BOTTOM")
+    thumb.tex:SetWidth(4)
     thumb:SetScript("OnEnter", function(t) t.tex:SetAlpha(1) end)
     thumb:SetScript("OnLeave", function(t) if not t.drag then t.tex:SetAlpha(0.55) end end)
     sb.off, sb.maxOff, sb.page = 0, 0, 1

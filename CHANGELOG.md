@@ -2,6 +2,18 @@
 
 All notable changes to Cys's Guild Hall, by Cyserin (Cys). Newest first.
 
+## 1.2.0
+- **Visual overhaul**: darker, crisper windows with a soft drop shadow, a black outer edge and a fine gold inner edge; title bars carry the Guild Hall seal and a gold hairline that fades at both ends.
+- **Tabs** are text tabs with a gold underline on the active one (Options sits apart after a divider). The Requests count shows in gold next to the name.
+- **Clean font** (Arial Narrow) by default for sharper small text; titles keep Friz Quadrata. Options > Text font switches back to Classic (applies after /reload).
+- Selected rows get a gold bar on the left; list rows have faint stripes; section headings have a gold tick; search boxes have a magnifier.
+- Buttons have a soft sheen, gold hover edge and a pressed nudge; close buttons are a thin X that turns red on hover.
+- Dropdown arrows point down; menus get the window look with a gold marker on the current pick.
+- Checkboxes show a gold check mark with a gold edge on hover; scroll bars are slimmer.
+- Empty detail panels show a faint Guild Hall seal.
+- Pop-ups (guild news toasts with a gold edge stripe, materials, shopping list, welcome, What's new) share the new look.
+- Fixed: the hint on the right of Crafting, Requests and Gaps was drawn behind the detail panel and never showed.
+
 ## 1.1.1
 - **Main & alts in the welcome**: setup is now 3 steps. After Initialize, pick your main and add your alts by name (or click Next if you have none). Asked once per account and guild, so your other characters skip it.
 

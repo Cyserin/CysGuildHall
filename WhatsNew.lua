@@ -11,6 +11,19 @@ local WN = {}
 GH.WhatsNew = WN
 
 WN.ENTRIES = {
+    { version = "1.2.0",
+        improved = {
+            "A fresh look: darker, crisper windows with a soft shadow, a fine gold edge and the Guild Hall seal in every title bar.",
+            "Tabs are now clean text tabs with a gold underline on the one you are on.",
+            "Sharper text: the new Clean font reads better at small sizes. Prefer the old look? Options > Text font > Classic, then /reload.",
+            "Picked rows get a gold marker on the left, lists have faint stripes, and search boxes have a magnifier.",
+            "Dropdown arrows point down, checkboxes show a real check mark, and scroll bars are slimmer.",
+            "Pop-ups (guild news, materials, shopping list, welcome, What's new) share the same look.",
+        },
+        fixed = {
+            "The hint on the right side of Crafting, Requests and Gaps (what to pick) was hidden behind the panel. It shows now, under the seal.",
+        },
+    },
     { version = "1.1.1",
         improved = {
             "Setup now asks for your main and alts right after Initialize. Pick your main, add alts by name, or click Next if you have none. You only see it once per account.",
@@ -186,22 +199,20 @@ local function Build()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:SetPoint("CENTER", 0, 60)
-    S.Tex(frame, "BACKGROUND", T.bg):SetAllPoints()
-    S.Border(frame, T.border)
+    S.Chrome(frame)
 
     local header = CreateFrame("Frame", nil, frame)
     header:SetPoint("TOPLEFT", 1, -1)
     header:SetPoint("TOPRIGHT", -1, -1)
     header:SetHeight(30)
-    S.Tex(header, "BACKGROUND", T.header):SetAllPoints()
+    S.HeaderBg(header)
     local icon = header:CreateTexture(nil, "ARTWORK")
-    icon:SetTexture("Interface\\Icons\\Trade_BlackSmithing")
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    icon:SetSize(18, 18)
+    icon:SetTexture(S.LOGO)
+    icon:SetSize(22, 22)
     icon:SetPoint("LEFT", 9, 0)
     frame.title = S.Text(header, 14, T.brand)
     frame.title:SetPoint("LEFT", icon, "RIGHT", 7, 0)
-    local x = S.Button(header, 22, 22, "x")
+    local x = S.Close(header)
     x:SetPoint("RIGHT", -4, 0)
     x:SetScript("OnClick", function() frame:Hide() end)
 

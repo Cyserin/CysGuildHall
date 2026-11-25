@@ -134,11 +134,7 @@ end
 
 local Paint
 
-local function Label(parent, text)
-    local fs = S.Text(parent, 11, S.T().accent)
-    fs:SetText(text or "")
-    return fs
-end
+local function Label(parent, text) return S.Heading(parent, text) end
 
 local function StatusText(st)
     local s = STATUS[st]
@@ -775,7 +771,7 @@ local function ListRow(parent, h)
     row.hl = S.Tex(row, "BACKGROUND", T.cardHover)
     row.hl:SetAllPoints()
     row.hl:Hide()
-    row.sel = S.Tex(row, "BACKGROUND", T.selected, 1)
+    row.sel = S.Selection(row)
     row.sel:SetAllPoints()
     row.sel:Hide()
     row.icon = row:CreateTexture(nil, "ARTWORK")
@@ -800,8 +796,8 @@ end
 function UI.Build(frame)
     local T = S.T()
     panel = CreateFrame("Frame", nil, frame)
-    panel:SetPoint("TOPLEFT", 1, -31)
-    panel:SetPoint("BOTTOMRIGHT", -1, 1)
+    panel:SetPoint("TOPLEFT", 2, -31)
+    panel:SetPoint("BOTTOMRIGHT", -2, 2)
     panel:SetFrameLevel(frame:GetFrameLevel() + 30)
     panel:EnableMouse(true)
     S.Tex(panel, "BACKGROUND", { T.bg[1], T.bg[2], T.bg[3], 1 }):SetAllPoints()
@@ -938,6 +934,7 @@ function UI.Build(frame)
     local d = S.Panel(panel, T.field)
     d:SetPoint("TOPLEFT", 320, -12)
     d:SetPoint("BOTTOMRIGHT", -10, 10)
+    S.Watermark(d)
     panel.detail = d
     d.none = S.Text(d, 11, SOFT, "CENTER")
     d.none:SetPoint("CENTER")

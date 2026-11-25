@@ -804,11 +804,10 @@ local function PaintTabs()
     local T = S.T()
     for key, b in pairs(frame.tabs) do
         local on = state.tab == key
-        b.label:SetTextColor(on and T.glow[1] or T.dim[1], on and T.glow[2] or T.dim[2], on and T.glow[3] or T.dim[3])
-        b.bg:SetColorTexture(unpack(on and T.selected or T.button))
+        b:SetSelected(on)
     end
     local n = GH.Requests.ForMe()
-    frame.tabs.requests:SetLabel(n > 0 and ("Requests |cffffd100(" .. n .. ")|r") or "Requests")
+    frame.tabs.requests:SetLabel(n > 0 and ("Requests |cfff5cb55" .. n .. "|r") or "Requests")
 end
 
 function Paint()
@@ -826,16 +825,16 @@ function Paint()
             row.text:ClearAllPoints()
             row.text:SetPoint("RIGHT", row.right, "LEFT", -6, 0)
             row.text:SetPoint("LEFT", 8, 0)
-            row.text:SetFont(STANDARD_TEXT_FONT, 12, "")
+            S.SetFont(row.text, 12)
             local selected = (d.kind == "recipe" and d.id == state.selected and not state.req) or (d.kind == "req" and d.id == state.req)
             row.sel:SetShown(selected)
             row:EnableMouse(d.kind ~= "header" and d.kind ~= "group" and d.kind ~= "gapnone" and d.kind ~= "gapwait")
             if d.kind == "header" then
-                row.text:SetFont(STANDARD_TEXT_FONT, 11, "")
+                S.SetFont(row.text, 11)
                 row.text:SetText(d.name:upper())
                 row.text:SetTextColor(T.brand[1], T.brand[2], T.brand[3])
             elseif d.kind == "group" then
-                row.text:SetFont(STANDARD_TEXT_FONT, 11, "")
+                S.SetFont(row.text, 11)
                 row.text:SetText(d.name)
                 row.text:SetTextColor(T.brand[1], T.brand[2], T.brand[3])
             elseif d.kind == "prof" then
@@ -988,9 +987,11 @@ function PaintDetail()
         end
         d.hint:SetText(hint)
         d.hint:Show()
+        d.watermark:SetAlpha(0.09)
         return
     end
     d.hint:Hide()
+    d.watermark:SetAlpha(0.03)
     d.box:Show()
     local c = GH.Prof.Resolve(id) or {}
     d.icon:SetTexture(Icon(c.o, id))
@@ -1200,12 +1201,7 @@ end
 --------------------------------------------------------------------------------
 -- Build
 --------------------------------------------------------------------------------
-local function Label(parent, text)
-    local T = S.T()
-    local fs = S.Text(parent, 11, T.accent)
-    fs:SetText(text)
-    return fs
-end
+local function Label(parent, text) return S.Heading(parent, text) end
 
 function SetTab(tab)
     -- Crafting and Gaps each keep their own pick: switching between them clears it
@@ -1248,8 +1244,8 @@ function BuildOptions()
     local T = S.T()
     local set = GH.db.settings
     local opt = CreateFrame("Frame", nil, frame)
-    opt:SetPoint("TOPLEFT", 1, -31)
-    opt:SetPoint("BOTTOMRIGHT", -1, 1)
+    opt:SetPoint("TOPLEFT", 2, -31)
+    opt:SetPoint("BOTTOMRIGHT", -2, 2)
     opt:SetFrameLevel(frame:GetFrameLevel() + 30)
     opt:EnableMouse(true)
     S.Tex(opt, "BACKGROUND", { T.bg[1], T.bg[2], T.bg[3], 1 }):SetAllPoints()
@@ -1419,6 +1415,19 @@ function BuildOptions()
         c:SetPoint("TOPLEFT", ab, "BOTTOMLEFT", 0, -14 - (i - 1) * 24)
         opt.checks[#opt.checks + 1] = c
     end
+
+    -- Text font: Clean (sharp, default) or Classic (the game's Friz Quadrata); applies after a reload
+    local fl = S.Text(opt, 11, T.text)
+    fl:SetPoint("TOPLEFT", ab, "BOTTOMLEFT", 0, -14 - 2 * 24 - 3)
+    fl:SetText("Text font")
+    opt.font = S.Dropdown(opt, 170, 18, function()
+        return { { "clean", "Clean (sharper)" }, { "classic", "Classic (Friz Quadrata)" } }
+    end, function() return set.font or "clean" end, function(v)
+        if set.font == v then return end
+        set.font = v
+        GH.Print("text font changed: type /reload to apply it everywhere.")
+    end)
+    opt.font:SetPoint("LEFT", fl, "LEFT", 70, 0)
 end
 
 -- Who runs which version: newer than yours green, older soft red, same parchment
@@ -1536,8 +1545,8 @@ local PaintAlts
 local function BuildAlts()
     local T = S.T()
     local p = CreateFrame("Frame", nil, frame)
-    p:SetPoint("TOPLEFT", 1, -31)
-    p:SetPoint("BOTTOMRIGHT", -1, 1)
+    p:SetPoint("TOPLEFT", 2, -31)
+    p:SetPoint("BOTTOMRIGHT", -2, 2)
     p:SetFrameLevel(frame:GetFrameLevel() + 40)
     p:EnableMouse(true)
     S.Tex(p, "BACKGROUND", { T.bg[1], T.bg[2], T.bg[3], 1 }):SetAllPoints()
@@ -1725,26 +1734,31 @@ local function Build()
     local pos = GH.db.settings.pos
     if pos then frame:SetPoint(pos[1], UIParent, pos[1], pos[2], pos[3]) else frame:SetPoint("CENTER", 0, 40) end
 
-    S.Tex(frame, "BACKGROUND", T.bg):SetAllPoints()
-    S.Border(frame, T.border)
+    S.Chrome(frame)
 
     -- header
     local header = CreateFrame("Frame", nil, frame)
     header:SetPoint("TOPLEFT", 1, -1)
     header:SetPoint("TOPRIGHT", -1, -1)
     header:SetHeight(30)
-    S.Tex(header, "BACKGROUND", T.header):SetAllPoints()
+    S.HeaderBg(header)
+    local seal = S.Emblem(header, 24)
+    seal:SetPoint("LEFT", 7, 0)
     local title = S.Text(header, 14, T.brand)
-    title:SetPoint("LEFT", 10, 0)
+    title:SetPoint("LEFT", seal, "RIGHT", 6, 0)
     title:SetText("Cys's Guild Hall")
     frame.guild = S.Text(header, 11, SOFT)
     frame.guild:SetPoint("LEFT", title, "RIGHT", 10, -1)
-    local close = S.Button(header, 22, 22, "x")
+    local close = S.Close(header)
     close:SetPoint("RIGHT", -4, 0)
     close:SetScript("OnClick", function() frame:Hide() end)
     frame.tabs = {}
-    local tOpt = S.Button(header, 64, 22, "Options")
-    tOpt:SetPoint("RIGHT", close, "LEFT", -10, 0)
+    local tOpt = S.Tab(header, "Options")
+    tOpt:SetPoint("RIGHT", close, "LEFT", -6, 0)
+    -- a thin divider between the content tabs and Options
+    local div = S.Tex(header, "ARTWORK", T.line)
+    div:SetSize(1, 14)
+    div:SetPoint("RIGHT", tOpt, "LEFT", -4, 0)
     tOpt:SetScript("OnClick", function()
         if state.tab == "options" then
             SetTab(state.prevTab or "craft")
@@ -1753,23 +1767,23 @@ local function Build()
             SetTab("options")
         end
     end)
-    local tCal = S.Button(header, 72, 22, "Calendar")
-    tCal:SetPoint("RIGHT", tOpt, "LEFT", -10, 0)
+    local tCal = S.Tab(header, "Calendar")
+    tCal:SetPoint("RIGHT", div, "LEFT", -4, 0)
     tCal:SetScript("OnClick", function() SetTab("cal") end)
-    local tRoster = S.Button(header, 60, 22, "Roster")
-    tRoster:SetPoint("RIGHT", tCal, "LEFT", -4, 0)
+    local tRoster = S.Tab(header, "Roster")
+    tRoster:SetPoint("RIGHT", tCal, "LEFT", 0, 0)
     tRoster:SetScript("OnClick", function() SetTab("roster") end)
-    local tPrep = S.Button(header, 76, 22, "Raid Prep")
-    tPrep:SetPoint("RIGHT", tRoster, "LEFT", -4, 0)
+    local tPrep = S.Tab(header, "Raid Prep")
+    tPrep:SetPoint("RIGHT", tRoster, "LEFT", 0, 0)
     tPrep:SetScript("OnClick", function() SetTab("prep") end)
-    local tGaps = S.Button(header, 56, 22, "Gaps")
-    tGaps:SetPoint("RIGHT", tPrep, "LEFT", -4, 0)
+    local tGaps = S.Tab(header, "Gaps")
+    tGaps:SetPoint("RIGHT", tPrep, "LEFT", 0, 0)
     tGaps:SetScript("OnClick", function() SetTab("gaps") end)
-    local tReq = S.Button(header, 96, 22, "Requests")
-    tReq:SetPoint("RIGHT", tGaps, "LEFT", -4, 0)
+    local tReq = S.Tab(header, "Requests")
+    tReq:SetPoint("RIGHT", tGaps, "LEFT", 0, 0)
     tReq:SetScript("OnClick", function() SetTab("requests") end)
-    local tCraft = S.Button(header, 80, 22, "Crafting")
-    tCraft:SetPoint("RIGHT", tReq, "LEFT", -4, 0)
+    local tCraft = S.Tab(header, "Crafting")
+    tCraft:SetPoint("RIGHT", tReq, "LEFT", 0, 0)
     tCraft:SetScript("OnClick", function() SetTab("craft") end)
     frame.tabs.craft, frame.tabs.requests, frame.tabs.gaps, frame.tabs.options = tCraft, tReq, tGaps, tOpt
     frame.tabs.prep = tPrep
@@ -1783,6 +1797,7 @@ local function Build()
     -- search
     local search = S.EditBox(frame, LIST_W, 24)
     search:SetPoint("TOPLEFT", 10, -40)
+    search:SetSearch()
     search.hint:SetText(HintText())
     search:SetScript("OnTextChanged", function(e)
         e.hint:SetShown(e:GetText() == "")
@@ -1850,10 +1865,11 @@ local function Build()
         row:SetHeight(ROW_H)
         row:SetPoint("TOPLEFT", 2, -2 - (i - 1) * ROW_H)
         row:SetPoint("TOPRIGHT", -8, -2 - (i - 1) * ROW_H)
+        if i % 2 == 0 then S.Tex(row, "BACKGROUND", { 1, 1, 1, 0.022 }, -1):SetAllPoints() end
         row.hl = S.Tex(row, "BACKGROUND", T.cardHover)
         row.hl:SetAllPoints()
         row.hl:Hide()
-        row.sel = S.Tex(row, "BACKGROUND", T.selected, 1)
+        row.sel = S.Selection(row)
         row.sel:SetAllPoints()
         row.sel:Hide()
         row.icon = row:CreateTexture(nil, "ARTWORK")
@@ -1879,7 +1895,7 @@ local function Build()
     frame.track:SetPoint("TOPRIGHT", -2, -2)
     frame.track:SetPoint("BOTTOMRIGHT", -2, 2)
     frame.track:SetWidth(4)
-    frame.thumb = S.Tex(frame.track, "ARTWORK", T.line)
+    frame.thumb = S.Tex(frame.track, "ARTWORK", { T.brand[1], T.brand[2], T.brand[3], 0.5 })
     frame.thumb:SetWidth(4)
     frame.empty = S.Text(listBox, 11, T.dim, "CENTER")
     frame.empty:SetPoint("CENTER")
@@ -1891,8 +1907,11 @@ local function Build()
     local box = S.Panel(frame, T.card)
     box:SetPoint("TOPLEFT", search, "TOPRIGHT", 10, 0)
     box:SetPoint("BOTTOMRIGHT", -10, 10)
-    d.hint = S.Text(frame, 12, T.dim, "CENTER")
-    d.hint:SetPoint("CENTER", box, "CENTER")
+    d.watermark = S.Watermark(box)
+    d.watermark:ClearAllPoints()
+    d.watermark:SetPoint("CENTER", 0, 40)
+    d.hint = S.Text(box, 12, SOFT, "CENTER")
+    d.hint:SetPoint("TOP", d.watermark, "BOTTOM", 0, -6)
     d.hint:SetWidth(320)
     local inner = CreateFrame("Frame", nil, box)
     inner:SetAllPoints()

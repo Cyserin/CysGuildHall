@@ -553,7 +553,7 @@ end)
 --------------------------------------------------------------------------------
 -- Saved data
 --------------------------------------------------------------------------------
-local DEFAULTS = { tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true, altGroup = true, altRank = "", calRemind = true,
+local DEFAULTS = { font = "clean", tooltip = true, notify = true, doneHours = 24, matsPopup = true, delivery = "m", toasts = true, lootShare = true, altGroup = true, altRank = "", calRemind = true,
     craftSort = "name", shopAuto = true, bankShare = false }
 
 GH.On("ADDON_LOADED", function(name)
